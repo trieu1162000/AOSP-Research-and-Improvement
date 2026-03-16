@@ -1,0 +1,139 @@
+diff --git a/init/README.md b/init/README.md
+index 4d6af0c..e14f58f 100644
+--- a/init/README.md
++++ b/init/README.md
+@@ -550,9 +550,18 @@ Commands
+ --------
+ 
+ `bootchart [start|stop]`
+-> Start/stop bootcharting. These are present in the default init.rc files,
+-  but bootcharting is only active if the file /data/bootchart/enabled exists;
+-  otherwise bootchart start/stop are no-ops.
++> Start/stop bootcharting. These are present in the default init.rc files.
++> Bootcharting is active only when one of the following is enabled:
++>
++> - early-init: add `androidboot.bootchart.enable=1` to the kernel command line.
++>   
++>   For example:
++>
++>   $ fastboot oem cmdline add androidboot.bootchart.enable=1
++>
++> - post-fs-data: create the file `/data/bootchart/enabled`
++>
++> Otherwise bootchart start/stop are no-ops.
+ 
+ `chmod <octal-mode> <path>`
+ > Change file access permissions.
+diff --git a/init/bootchart.cpp b/init/bootchart.cpp
+index af7b889..a6da581 100644
+--- a/init/bootchart.cpp
++++ b/init/bootchart.cpp
+@@ -46,11 +46,16 @@ namespace android {
+ namespace init {
+ 
+ static std::thread* g_bootcharting_thread;
++static bool bootchart_early_init = false;
+ 
+ [[clang::no_destroy]] static std::mutex g_bootcharting_finished_mutex;
+ [[clang::no_destroy]] static std::condition_variable g_bootcharting_finished_cv;
+ static bool g_bootcharting_finished;
+ 
++static std::string get_bootchart_path(const std::string& file) {
++    return std::string(bootchart_early_init ? "/dev/bootchart" : "/data/bootchart") + "/" + file;
++}
++
+ static long long get_uptime_jiffies() {
+     constexpr int64_t kNanosecondsPerJiffy = 10000000;
+     boot_clock::time_point uptime = boot_clock::now();
+@@ -79,7 +84,7 @@ static void log_header() {
+   std::string kernel_cmdline;
+   android::base::ReadFileToString("/proc/cmdline", &kernel_cmdline);
+ 
+-  auto fp = fopen_unique("/data/bootchart/header", "we");
++  auto fp = fopen_unique(GetBootchartPath("header").c_str(), "we");
+   if (!fp) return;
+   fprintf(&*fp, "version = Android init 0.8\n");
+   fprintf(&*fp, "title = Boot chart for Android (%s)\n", date);
+@@ -155,11 +160,11 @@ static void bootchart_thread_main() {
+       return;
+   }
+   // Open log files.
+-  auto stat_log = fopen_unique("/data/bootchart/proc_stat.log", "we");
++  auto stat_log = fopen_unique(GetBootchartPath("proc_stat.log").c_str(), "we");
+   if (!stat_log) return;
+-  auto proc_log = fopen_unique("/data/bootchart/proc_ps.log", "we");
++  auto proc_log = fopen_unique(GetBootchartPath("proc_ps.log").c_str(), "we");
+   if (!proc_log) return;
+-  auto disk_log = fopen_unique("/data/bootchart/proc_diskstats.log", "we");
++  auto disk_log = fopen_unique(GetBootchartPath("proc_diskstats.log").c_str(), "we");
+   if (!disk_log) return;
+ 
+   log_header();
+@@ -180,14 +185,29 @@ static void bootchart_thread_main() {
+ }
+ 
+ static Result<void> do_bootchart_start() {
+-    // We don't care about the content, but we do care that /data/bootchart/enabled actually exists.
+-    std::string start;
+-    if (!android::base::ReadFileToString("/data/bootchart/enabled", &start)) {
+-        LOG(VERBOSE) << "Not bootcharting";
++    // Support bootchart start on early-init
++    std::string kernel_cmdline;
++    android::base::ReadFileToString("/proc/cmdline", &kernel_cmdline);
++    if (kernel_cmdline.find("androidboot.bootchart.enabled=1") != std::string::npos) {
++      // Check if bootchart already launched.
++      if (!bootchart_early_init) {
++        bootchart_early_init = true;
++      } else {
++        LOG(VERBOSE) << "bootchart already started";
+         return {};
+-    }
++      }
++    } else {
++      // Otherwise, fallback to post-fs-data
++      // We don't care about the content, but we do care that /data/bootchart/enabled actually exists.
++      std::string start;
++      if (!android::base::ReadFileToString("/data/bootchart/enabled", &start)) {
++          LOG(VERBOSE) << "Not bootcharting";
++          return {};
++      }
+ 
+-    g_bootcharting_thread = new std::thread(bootchart_thread_main);
++    }
++    if (!g_bootcharting_thread)
++      g_bootcharting_thread = new std::thread(bootchart_thread_main);
+     return {};
+ }
+ 
+diff --git a/init/grab-bootchart.sh b/init/grab-bootchart.sh
+index 2c56698..da17180 100755
+--- a/init/grab-bootchart.sh
++++ b/init/grab-bootchart.sh
+@@ -8,7 +8,11 @@ TMPDIR=/tmp/android-bootchart
+ rm -rf $TMPDIR
+ mkdir -p $TMPDIR
+ 
+-LOGROOT=/data/bootchart
++if [ "$(adb shell getprop ro.boot.bootchart.enabled | tr -d '\r')" = "1" ]; then
++    LOGROOT=/dev/bootchart
++else
++    LOGROOT=/data/bootchart
++fi
+ TARBALL=bootchart.tgz
+ 
+ FILES="header proc_stat.log proc_ps.log proc_diskstats.log"
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 468c139..41e04ab 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -13,6 +13,10 @@ import /system/etc/init/hw/init.${ro.zygote}.rc
+ 
+ # Cgroups are mounted right before early-init using list from /etc/cgroups.json
+ on early-init
++    # Allow bootchart to capture from the beginning of second-stage init.
++    mkdir /dev/bootchart 0755 root root
++    bootchart start
++
+     # Disable sysrq from keyboard
+     write /proc/sys/kernel/sysrq 0
+ 
