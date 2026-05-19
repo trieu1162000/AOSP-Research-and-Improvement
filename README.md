@@ -1,9 +1,11 @@
 # AOSP-Research-and-Improvement
-- Improve bootchart:
-https://android-review.googlesource.com/c/platform/system/core/+/3931974 (merged)
-https://android-review.googlesource.com/c/platform/system/core/+/3995953 (merged)
-- Improve netd in cold boot time:
-https://android-review.googlesource.com/c/platform/system/core/+/3967666 (still in-review)
-- Others:
-https://android-review.googlesource.com/c/platform/system/core/+/3935872 (mergered)
-https://android-review.googlesource.com/q/topic:%22pre_create_loop_devices%22 (abandoned)
+* **Improve bootchart:**
+  * [CL 3931974](https://android-review.googlesource.com/c/platform/system/core/+/3931974) (Merged)
+  * [CL 3995953](https://android-review.googlesource.com/c/platform/system/core/+/3995953) (Merged)
+
+* **Improve netd in cold boot time:**
+  * [CL 3967666](https://android-review.googlesource.com/c/platform/system/core/+/3967666) (In Review)
+
+* **Others:**
+  * [CL 3935872](https://android-review.googlesource.com/c/platform/system/core/+/3935872) (Merged)
+  * [Topic: pre_create_loop_devices](https://android-review.googlesource.com/q/topic:%22pre_create_loop_devices%22) (Abandoned)
