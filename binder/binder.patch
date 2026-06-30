@@ -1,0 +1,126 @@
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 69aa1277f..1ecf88fb0 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -1,4 +1,4 @@
+-// SPDX-License-Identifier: GPL-2.0-only
++﻿// SPDX-License-Identifier: GPL-2.0-only
+ /* binder.c
+  *
+  * Android IPC Subsystem
+@@ -67,6 +67,8 @@
+ #include <linux/task_work.h>
+ #include <linux/sizes.h>
+ #include <linux/ktime.h>
++#include <linux/sched/topology.h>
++#include <linux/smp.h>
+ 
+ #include <kunit/visibility.h>
+ 
+@@ -625,10 +627,62 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+ 	return thread;
+ }
+ 
++/**
++ * binder_select_thread_topology_ilocked() - topology-aware thread selection
++ * @proc:       target process
++ * @caller_cpu: CPU the calling thread is running on (smp_processor_id())
++ *
++ * Selects a waiting thread that shares L2 cache with the caller.
++ * Falls back to FIFO if no topology-local thread is available.
++ *
++ * Requires proc->inner_lock held.
++ */
++static struct binder_thread *
++binder_select_thread_topology_ilocked(struct binder_proc *proc, int caller_cpu)
++{
++	struct binder_thread *thread, *best = NULL;
++	const struct cpumask *caller_cluster;
++
++	/* Get L2-sharing cpumask for the caller's CPU */
++	caller_cluster = cpu_coregroup_mask(caller_cpu);
++
++	/* First pass: find a thread on same L2-sharing cluster */
++	list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
++		int thread_cpu = task_cpu(thread->task);
++		if (cpumask_test_cpu(thread_cpu, caller_cluster)) {
++			best = thread;
++			break;
++		}
++	}
++
++	/* Second pass: same cluster_id (approximation for DynamIQ) */
++	if (!best) {
++		int caller_cluster_id = cpu_topology[caller_cpu].cluster_id;
++		list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
++			int thread_cpu = task_cpu(thread->task);
++			if (cpu_topology[thread_cpu].cluster_id == caller_cluster_id) {
++				best = thread;
++				break;
++			}
++		}
++	}
++
++	/* Fallback: FIFO (existing behavior) */
++	if (!best)
++		best = list_first_entry_or_null(&proc->waiting_threads,
++				struct binder_thread, waiting_thread_node);
++
++	if (best)
++		list_del_init(&best->waiting_thread_node);
++
++	return best;
++}
++
+ /**
+  * binder_wakeup_thread_ilocked() - wakes up a thread for doing proc work.
+  * @proc:	process to wake up a thread in
+  * @thread:	specific thread to wake-up (may be NULL)
++ * @caller_cpu: (reserved, currently unused)
+  * @sync:	whether to do a synchronous wake-up
+  *
+  * This function wakes up a thread in the @proc process.
+@@ -642,8 +696,9 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+  * and pass the result into the @thread parameter.
+  */
+ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
+-					 struct binder_thread *thread,
+-					 bool sync)
++						 struct binder_thread *thread,
++						 int __always_unused caller_cpu,
++						 bool sync)
+ {
+ 	assert_spin_locked(&proc->inner_lock);
+ 
+@@ -675,7 +730,7 @@ static void binder_wakeup_proc_ilocked(struct binder_proc *proc)
+ {
+ 	struct binder_thread *thread = binder_select_thread_ilocked(proc);
+ 
+-	binder_wakeup_thread_ilocked(proc, thread, /* sync = */false);
++	binder_wakeup_thread_ilocked(proc, thread, smp_processor_id(), /* sync = */false);
+ }
+ 
+ static bool is_rt_policy(int policy)
+@@ -3048,8 +3103,11 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 		return frozen ? BR_FROZEN_REPLY : BR_DEAD_REPLY;
+ 	}
+ 
+-	if (!thread && !pending_async)
+-		thread = binder_select_thread_ilocked(proc);
++	if (!thread && !pending_async) {
++		thread = binder_select_thread_topology_ilocked(proc, smp_processor_id());
++		if (!thread)
++			thread = binder_select_thread_ilocked(proc);
++	}
+ 
+ 	if (thread) {
+ 		binder_transaction_priority(thread, t, node);
+@@ -3072,7 +3130,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	}
+ 
+ 	if (!pending_async)
+-		binder_wakeup_thread_ilocked(proc, thread, !oneway /* sync */);
++		binder_wakeup_thread_ilocked(proc, thread, smp_processor_id(), !oneway /* sync */);
+ 
+ 	proc->outstanding_txns++;
+ 	binder_inner_proc_unlock(proc);
