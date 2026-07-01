@@ -1,73 +1,97 @@
+From 2e783f0418853a2fef1092d9d20f55e7d2f68509 Mon Sep 17 00:00:00 2001
+From: trieu2.huynh <trieu2.huynh@lge.com>
+Date: Wed, 01 Jul 2026 17:57:59 +0900
+Subject: [PATCH] android: binder: implement topology-aware thread selection (CTABS)
+
+Implement Cluster/Topology-Aware Binder Selection (CTABS) to optimize
+transaction dispatching. This heuristic improves CPU cache locality
+and reduces cross-cluster cache ping-pongs, which is highly beneficial
+for asymmetric multi-cluster ARM64 SoCs (e.g., big.LITTLE architectures).
+
+Track the most recent CPU execution per binder thread within the
+process loop and use this data to score available waiting threads.
+The selection favors threads on the same CPU (score 3), followed by
+threads on the same cluster with recent execution (score 2 or 1).
+
+Change-Id: Idbcbadb4947ad62ae4d889344bd696a1c36ef79a
+Signed-off-by: trieu2.huynh <trieu2.huynh@lge.com>
+---
+
 diff --git a/drivers/android/binder.c b/drivers/android/binder.c
-index 69aa1277f..1ecf88fb0 100644
+index 7811ced..a78da22 100644
 --- a/drivers/android/binder.c
 +++ b/drivers/android/binder.c
-@@ -1,4 +1,4 @@
--// SPDX-License-Identifier: GPL-2.0-only
-+﻿// SPDX-License-Identifier: GPL-2.0-only
- /* binder.c
-  *
-  * Android IPC Subsystem
-@@ -67,6 +67,8 @@
+@@ -42,6 +42,7 @@
+ 
+ #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+ 
++#include <linux/cpumask.h>
+ #include <linux/fdtable.h>
+ #include <linux/file.h>
+ #include <linux/freezer.h>
+@@ -52,6 +53,7 @@
+ #include <linux/mutex.h>
+ #include <linux/nsproxy.h>
+ #include <linux/poll.h>
++#include <linux/preempt.h>
+ #include <linux/debugfs.h>
+ #include <linux/rbtree.h>
+ #include <linux/sched/signal.h>
+@@ -65,6 +67,7 @@
+ #include <linux/ratelimit.h>
+ #include <linux/syscalls.h>
  #include <linux/task_work.h>
++#include <linux/topology.h>
  #include <linux/sizes.h>
  #include <linux/ktime.h>
-+#include <linux/sched/topology.h>
-+#include <linux/smp.h>
- 
- #include <kunit/visibility.h>
- 
-@@ -625,10 +627,62 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+ #include <linux/android_vendor.h>
+@@ -633,6 +636,53 @@ binder_select_thread_ilocked(struct binder_proc *proc)
  	return thread;
  }
  
-+/**
-+ * binder_select_thread_topology_ilocked() - topology-aware thread selection
-+ * @proc:       target process
-+ * @caller_cpu: CPU the calling thread is running on (smp_processor_id())
-+ *
-+ * Selects a waiting thread that shares L2 cache with the caller.
-+ * Falls back to FIFO if no topology-local thread is available.
-+ *
-+ * Requires proc->inner_lock held.
++/* CTABS: topology-aware selection with low-risk load-avoidance heuristic.
++ * Prefer threads with score: 3 (last_cpu == caller_cpu),
++ * 2 (same cluster and task_cpu == last_cpu), 1 (same cluster), else 0.
++ * This uses only thread->last_cpu and task_cpu() and falls back to FIFO.
 + */
 +static struct binder_thread *
 +binder_select_thread_topology_ilocked(struct binder_proc *proc, int caller_cpu)
 +{
 +	struct binder_thread *thread, *best = NULL;
-+	const struct cpumask *caller_cluster;
++	int caller_cluster = -1;
++	int best_score = -1;
 +
-+	/* Get L2-sharing cpumask for the caller's CPU */
-+	caller_cluster = cpu_coregroup_mask(caller_cpu);
++	assert_spin_locked(&proc->inner_lock);
 +
-+	/* First pass: find a thread on same L2-sharing cluster */
++	if (caller_cpu >= 0 && caller_cpu < nr_cpu_ids)
++		caller_cluster = topology_cluster_id(caller_cpu);
++
 +	list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
-+		int thread_cpu = task_cpu(thread->task);
-+		if (cpumask_test_cpu(thread_cpu, caller_cluster)) {
++		int _last = READ_ONCE(thread->last_cpu);
++		int tcpu = (_last >= 0) ? _last : -1; /* don't deref task_struct here */
++		int tcluster = -1;
++		int score = 0;
++
++		if (tcpu >= 0 && tcpu < nr_cpu_ids)
++			tcluster = topology_cluster_id(tcpu);
++
++		/* Highest priority: exactly the same CPU */
++		if (tcpu == caller_cpu) {
++			score = 2;
++		} else if (caller_cluster >= 0 && tcluster == caller_cluster) {
++			/* Prefer threads that last ran on the same cluster */
++			score = 1;
++		} else {
++			score = 0;
++		}
++
++		if (score > best_score) {
++			best_score = score;
 +			best = thread;
-+			break;
++			if (best_score == 2)
++				break; /* optimal choice */
 +		}
 +	}
-+
-+	/* Second pass: same cluster_id (approximation for DynamIQ) */
-+	if (!best) {
-+		int caller_cluster_id = cpu_topology[caller_cpu].cluster_id;
-+		list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
-+			int thread_cpu = task_cpu(thread->task);
-+			if (cpu_topology[thread_cpu].cluster_id == caller_cluster_id) {
-+				best = thread;
-+				break;
-+			}
-+		}
-+	}
-+
-+	/* Fallback: FIFO (existing behavior) */
-+	if (!best)
-+		best = list_first_entry_or_null(&proc->waiting_threads,
-+				struct binder_thread, waiting_thread_node);
-+
-+	if (best)
-+		list_del_init(&best->waiting_thread_node);
 +
 +	return best;
 +}
@@ -75,52 +99,57 @@ index 69aa1277f..1ecf88fb0 100644
  /**
   * binder_wakeup_thread_ilocked() - wakes up a thread for doing proc work.
   * @proc:	process to wake up a thread in
-  * @thread:	specific thread to wake-up (may be NULL)
-+ * @caller_cpu: (reserved, currently unused)
-  * @sync:	whether to do a synchronous wake-up
-  *
-  * This function wakes up a thread in the @proc process.
-@@ -642,8 +696,9 @@ binder_select_thread_ilocked(struct binder_proc *proc)
-  * and pass the result into the @thread parameter.
-  */
- static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
--					 struct binder_thread *thread,
--					 bool sync)
-+						 struct binder_thread *thread,
-+						 int __always_unused caller_cpu,
-+						 bool sync)
- {
- 	assert_spin_locked(&proc->inner_lock);
- 
-@@ -675,7 +730,7 @@ static void binder_wakeup_proc_ilocked(struct binder_proc *proc)
- {
- 	struct binder_thread *thread = binder_select_thread_ilocked(proc);
- 
--	binder_wakeup_thread_ilocked(proc, thread, /* sync = */false);
-+	binder_wakeup_thread_ilocked(proc, thread, smp_processor_id(), /* sync = */false);
- }
- 
- static bool is_rt_policy(int policy)
-@@ -3048,8 +3103,11 @@ static int binder_proc_transaction(struct binder_transaction *t,
- 		return frozen ? BR_FROZEN_REPLY : BR_DEAD_REPLY;
+@@ -3060,6 +3110,9 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 			node->has_async_transaction = true;
  	}
  
--	if (!thread && !pending_async)
++	/* Compute caller CPU before acquiring inner_lock to avoid doing CPU queries while holding spinlocks */
++	int caller_cpu = raw_smp_processor_id();
++
+ 	binder_inner_proc_lock(proc);
+ 	if (proc->is_frozen) {
+ 		proc->sync_recv |= !oneway;
+@@ -3076,8 +3129,11 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	trace_android_vh_binder_proc_transaction_entry(proc, t,
+ 		&thread, node->debug_id, pending_async, !oneway, &skip);
+ 
+-	if (!thread && !pending_async && !skip)
 -		thread = binder_select_thread_ilocked(proc);
-+	if (!thread && !pending_async) {
-+		thread = binder_select_thread_topology_ilocked(proc, smp_processor_id());
++	if (!thread && !pending_async && !skip) {
++		thread = binder_select_thread_topology_ilocked(proc, caller_cpu);
 +		if (!thread)
 +			thread = binder_select_thread_ilocked(proc);
 +	}
  
- 	if (thread) {
- 		binder_transaction_priority(thread, t, node);
-@@ -3072,7 +3130,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	trace_android_vh_binder_proc_transaction(current, proc->tsk,
+ 		thread ? thread->task : NULL, node->debug_id, t->code,
+@@ -4938,6 +4994,7 @@ static int binder_thread_read(struct binder_proc *proc,
  	}
  
- 	if (!pending_async)
--		binder_wakeup_thread_ilocked(proc, thread, !oneway /* sync */);
-+		binder_wakeup_thread_ilocked(proc, thread, smp_processor_id(), !oneway /* sync */);
+ 	thread->looper &= ~BINDER_LOOPER_STATE_WAITING;
++	WRITE_ONCE(thread->last_cpu, raw_smp_processor_id());
  
- 	proc->outstanding_txns++;
- 	binder_inner_proc_unlock(proc);
+ 	if (ret)
+ 		return ret;
+@@ -5455,6 +5512,8 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	spin_lock_init(&thread->prio_lock);
+ 	thread->prio_state = BINDER_PRIO_SET;
+ 	thread->ee.command = BR_OK;
++	/* CTABS: initialize last_cpu to -1 (unknown) */
++	WRITE_ONCE(thread->last_cpu, -1);
+ 	INIT_LIST_HEAD(&new_thread->waiting_thread_node);
+ 	return thread;
+ }
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 06ac60a..a2bc21c 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -610,6 +610,8 @@ struct binder_thread {
+ 	atomic_t tmp_ref;
+ 	bool is_dead;
+ 	struct task_struct *task;
++	/* CTABS: last CPU this thread ran on (smp_processor_id()), -1 if unknown */
++	int last_cpu;
+ 	spinlock_t prio_lock;
+ 	struct binder_priority prio_next;
+ 	enum binder_prio_state prio_state;
