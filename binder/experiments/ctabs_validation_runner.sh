@@ -1,8 +1,13 @@
 #!/bin/bash
 # ctabs_validation_runner.sh
 #
-# Runs all four standard VTS binder/hwbinder performance tests plus the
-# CTABS-specific schd-dbg-ctabs variant under several CPU-affinity scenarios.
+# Runs all 7 standard VTS binder/hwbinder performance test binaries plus the
+# CTABS-specific schd-dbg-ctabs variant under several CPU-affinity scenarios:
+#   1. schd-dbg              — binder latency baseline
+#   2-4. schd-dbg-ctabs      — CTABS binder latency (organic/same-cluster/cross-cluster)
+#   5. libhwbinder_latency   — hwbinder latency (+ same/cross-cluster variants)
+#   6. binderThroughputTest + libbinder_benchmark   — binder throughput (multi-proc + payload sweep)
+#   7. hwbinderThroughputTest + libhwbinder_benchmark — hwbinder throughput (multi-proc + payload sweep)
 # Collects JSON results, optional perfetto traces, and optional simpleperf
 # cache-miss stats.
 #
@@ -47,8 +52,10 @@ PERFETTO_CFG="$DEVICE_TMP/perfetto-config.txt"
 BIN_CTABS="$DEVICE_TMP/schd-dbg-ctabs"
 BIN_SCHD_DBG="$DEVICE_TMP/schd-dbg"
 BIN_HW_LAT="$DEVICE_TMP/libhwbinder_latency"
-BIN_HW_THRU="$DEVICE_TMP/binderThroughputTest"
-BIN_HW_BENCH="$DEVICE_TMP/hwbinderThroughputTest"
+BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"       # frameworks/native binder throughput (multi-process)
+BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"        # system/libhwbinder/vts Benchmark_binder.cpp (payload sweep)
+BIN_HW_THRU="$DEVICE_TMP/hwbinderThroughputTest"          # Benchmark_throughput.cpp (multi-process contention)
+BIN_HW_BENCH="$DEVICE_TMP/libhwbinder_benchmark"          # Benchmark.cpp (google-benchmark payload sweep)
 
 # ------------------------------------------------------------------ #
 # Arg parsing                                                          #
@@ -121,8 +128,14 @@ stop_perfetto() {
 if [[ $PUSH -eq 1 ]]; then
     echo "=== Pushing binaries ==="
     # Adjust paths to match your AOSP out/target/product/<device>/system/bin/
+    # Note: cc_test modules (schd-dbg*, libhwbinder_latency, hwbinderThroughputTest)
+    # may instead install under out/target/product/<device>/data/nativetest/<module>/<module>
+    # cc_benchmark modules (libbinder_benchmark, libhwbinder_benchmark) follow the same pattern.
+    # Adjust AOSP_BIN or use `find out -name '<module>'` if binaries are not found here.
     AOSP_BIN="${AOSP_BIN:-out/target/product/generic/system/bin}"
-    for bin in schd-dbg-ctabs schd-dbg libhwbinder_latency binderThroughputTest hwbinderThroughputTest; do
+    for bin in schd-dbg-ctabs schd-dbg libhwbinder_latency \
+               binderThroughputTest libbinder_benchmark \
+               hwbinderThroughputTest libhwbinder_benchmark; do
         src="$AOSP_BIN/$bin"
         if [[ -f "$src" ]]; then
             adb push "$src" "$DEVICE_TMP/"
@@ -198,7 +211,7 @@ MASK_C2=$(echo "$CLUSTER_MASKS" | grep 'cluster2=' | cut -d= -f2 || echo "")
 # Section 1 — Binder latency: schd-dbg (baseline, standard VTS)      #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [1/6] Binder latency — baseline schd-dbg (standard VTS) ==="
+echo "=== [1/7] Binder latency — baseline schd-dbg (standard VTS) ==="
 run_adb "1_binder_latency_baseline" \
     "$BIN_SCHD_DBG -i $ITER -pair $PAIR" || true
 
@@ -206,7 +219,7 @@ run_adb "1_binder_latency_baseline" \
 # Section 2 — Binder latency: schd-dbg-ctabs (no pin, organic)       #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [2/6] Binder latency — CTABS organic (no affinity pin) ==="
+echo "=== [2/7] Binder latency — CTABS organic (no affinity pin) ==="
 [[ $TRACE -eq 1 ]] && start_perfetto "ctabs_organic"
 run_adb "2_ctabs_binder_latency_organic" \
     "$BIN_CTABS -i $ITER -pair $PAIR -csv $DEVICE_TMP/ctabs_organic" || true
@@ -224,7 +237,7 @@ done
 # ------------------------------------------------------------------ #
 if [[ -n "$MASK_C0" ]]; then
     echo ""
-    echo "=== [3/6] CTABS same-cluster: all on cluster0 ($MASK_C0) ==="
+    echo "=== [3/7] CTABS same-cluster: all on cluster0 ($MASK_C0) ==="
     [[ $TRACE -eq 1 ]] && start_perfetto "ctabs_same_cluster"
     run_adb "3_ctabs_same_cluster" \
         "$BIN_CTABS -i $ITER -pair $PAIR -pin $MASK_C0 -csv $DEVICE_TMP/ctabs_same" || true
@@ -241,7 +254,7 @@ fi
 # ------------------------------------------------------------------ #
 if [[ -n "$MASK_C0" && -n "$MASK_C1" ]]; then
     echo ""
-    echo "=== [4/6] CTABS cross-cluster: servers=$MASK_C0 clients=$MASK_C1 ==="
+    echo "=== [4/7] CTABS cross-cluster: servers=$MASK_C0 clients=$MASK_C1 ==="
     [[ $TRACE -eq 1 ]] && start_perfetto "ctabs_cross_cluster"
     run_adb "4_ctabs_cross_cluster" \
         "$BIN_CTABS -i $ITER -pair $PAIR -pin-servers $MASK_C0 -pin-clients $MASK_C1 \
@@ -258,7 +271,7 @@ fi
 # Section 5 — HW-binder latency (standard VTS, with topology output) #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [5/6] HW-binder latency — standard VTS ==="
+echo "=== [5/7] HW-binder latency — standard VTS ==="
 run_adb "5_hwbinder_latency_baseline" \
     "$BIN_HW_LAT -i $ITER -pair $PAIR" || true
 
@@ -277,14 +290,24 @@ if [[ -n "$MASK_C0" && -n "$MASK_C1" ]]; then
 fi
 
 # ------------------------------------------------------------------ #
-# Section 6 — Throughput (binder + hwbinder, standard VTS)           #
+# Section 6 — Binder throughput (2 variants, standard VTS)            #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [6/6] Throughput tests ==="
-run_adb "6a_binder_throughput" \
+echo "=== [6/7] Binder throughput tests ==="
+run_adb "6a_binder_throughput_multiproc" \
+    "$BIN_BINDER_THRU -i $ITER" || true
+run_adb "6b_binder_throughput_payload_sweep" \
+    "$BIN_BINDER_BENCH" || true
+
+# ------------------------------------------------------------------ #
+# Section 7 — HW-binder throughput (2 variants, standard VTS)         #
+# ------------------------------------------------------------------ #
+echo ""
+echo "=== [7/7] HW-binder throughput tests ==="
+run_adb "7a_hwbinder_throughput_multiproc" \
     "$BIN_HW_THRU -i $ITER" || true
-run_adb "6b_hwbinder_throughput" \
-    "$BIN_HW_BENCH -i $ITER" || true
+run_adb "7b_hwbinder_throughput_payload_sweep" \
+    "$BIN_HW_BENCH" || true
 
 # ------------------------------------------------------------------ #
 # Collect logs                                                         #
