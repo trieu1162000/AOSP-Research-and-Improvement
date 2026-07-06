@@ -180,32 +180,20 @@ done" | tee "$TOPO_FILE"
 # ------------------------------------------------------------------ #
 # Read topology to build cluster masks                                #
 # ------------------------------------------------------------------ #
-# Auto-detect cluster masks from sysfs (heuristic based on cluster_id)
+# Parse topology.txt (already collected above) to build cluster masks
 echo "=== Computing cluster CPU masks ==="
-CLUSTER_MASKS=$(adb shell python3 -c "
-import os, sys
-cpus = {}
-for cpu in sorted(os.listdir('/sys/devices/system/cpu')):
-    if not cpu.startswith('cpu') or not cpu[3:].isdigit():
-        continue
-    n = int(cpu[3:])
-    try:
-        with open(f'/sys/devices/system/cpu/{cpu}/topology/cluster_id') as f:
-            c = int(f.read().strip())
-    except:
-        c = 0
-    cpus.setdefault(c, []).append(n)
-for cid, cpulist in sorted(cpus.items()):
-    mask = sum(1 << c for c in cpulist)
-    print(f'cluster{cid}=0x{mask:x}')
-" 2>/dev/null) || CLUSTER_MASKS=""
-echo "Cluster masks: $CLUSTER_MASKS"
+CLUSTER_MASKS=$(sed -n 's/^cpu\([0-9]*\):.* cluster=\([0-9]*\) .*/\1 \2/p' "$TOPO_FILE" 2>/dev/null | awk '
+    { m[$2] += 2^$1 }
+    END { for(c in m) printf "cluster%d=0x%x ", c, m[c] }
+' 2>/dev/null) || CLUSTER_MASKS=""
+CLUSTER_MASKS=$(echo "$CLUSTER_MASKS" | xargs)
+echo "Cluster masks: [$CLUSTER_MASKS]"
 echo "$CLUSTER_MASKS" > "$OUT_DIR/cluster_masks.txt"
 
-# Parse up to 3 clusters
-MASK_C0=$(echo "$CLUSTER_MASKS" | grep 'cluster0=' | cut -d= -f2 || echo "")
-MASK_C1=$(echo "$CLUSTER_MASKS" | grep 'cluster1=' | cut -d= -f2 || echo "")
-MASK_C2=$(echo "$CLUSTER_MASKS" | grep 'cluster2=' | cut -d= -f2 || echo "")
+# Parse up to 3 clusters (extract only the hex value, no trailing text)
+MASK_C0=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster0=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
+MASK_C1=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster1=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
+MASK_C2=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster2=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
 
 # ------------------------------------------------------------------ #
 # Section 1 — Binder latency: schd-dbg (baseline, standard VTS)      #
