@@ -326,11 +326,43 @@ echo "Results in: $OUT_DIR"
 ls -lh "$OUT_DIR"
 
 echo ""
-echo "=== Quick latency summary (avg_ms from JSON) ==="
+echo "=== Quick latency summary ==="
 for f in "$OUT_DIR"/*.json; do
     label=$(basename "$f" .json)
-    avg=$(grep -o '"avg":[0-9.]*' "$f" 2>/dev/null | head -1 | cut -d: -f2 || echo "N/A")
-    echo "  $label => avg_ms=$avg"
+    # Case 1: CTABS JSON — has fifo_total_ms (prefer overall total)
+    if grep -q '"fifo_total_ms"' "$f" 2>/dev/null; then
+        avg=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || \
+              grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || echo "N/A")
+        echo "  $label => avg_ms=$avg (CTABS)"
+        continue
+    fi
+    # Case 2: Standard VTS latency JSON (baseline / hwbinder)
+    if grep -q '"other_ms"' "$f" 2>/dev/null; then
+        avg=$(grep -o '"other_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || \
+              grep -o '"fifo_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || echo "N/A")
+        echo "  $label => avg_ms=$avg"
+        continue
+    fi
+    # Case 3: Throughput multiproc (text: "average:0.042828ms")
+    if grep -q 'average:' "$f" 2>/dev/null; then
+        avg=$(grep -o 'average:[0-9.]*' "$f" | head -1 | cut -d: -f2 || echo "N/A")
+        echo "  $label => avg_ms=$avg (throughput)"
+        continue
+    fi
+    # Case 4: Google Benchmark table (text, no average line)
+    if grep -q 'BM_sendVec' "$f" 2>/dev/null; then
+        # Extract median time from first line (e.g. "BM_sendVec_binder/4 45448 ns ...")
+        first=$(grep 'BM_sendVec' "$f" | head -1)
+        ns=$(echo "$first" | awk '{print $2}' | grep -o '^[0-9]*' || echo "N/A")
+        if [[ "$ns" != "N/A" && -n "$ns" ]]; then
+            avg=$(echo "scale=4; $ns / 1000000" | bc 2>/dev/null || echo "N/A")
+        else
+            avg="N/A"
+        fi
+        echo "  $label => avg_ms=$avg (benchmark)"
+        continue
+    fi
+    echo "  $label => avg_ms=N/A (unrecognized format)"
 done
 
 echo ""
