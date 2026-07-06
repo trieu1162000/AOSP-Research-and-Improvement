@@ -319,15 +319,28 @@ for f in "$OUT_DIR"/*.json; do
     label=$(basename "$f" .json)
     # Case 1: CTABS JSON — has fifo_total_ms (prefer overall total)
     if grep -q '"fifo_total_ms"' "$f" 2>/dev/null; then
-        avg=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || \
-              grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || echo "N/A")
+        avg=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | head -1 | grep -o '[0-9.]*$' || \
+              grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | head -1 | grep -o '[0-9.]*$' || echo "N/A")
         echo "  $label => avg_ms=$avg (CTABS)"
         continue
     fi
-    # Case 2: Standard VTS latency JSON (baseline / hwbinder)
+    # Case 1: CTABS JSON — has fifo_total_ms (average across all pairs)
+    if grep -q '"fifo_total_ms"' "$f" 2>/dev/null; then
+        avgs=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
+        if [ -z "$avgs" ]; then
+            avgs=$(grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
+        fi
+        avg=$(echo "$avgs" | awk '{sum+=$1; n++} END {if(n>0) printf "%.4g", sum/n; else print "N/A"}')
+        echo "  $label => avg_ms=$avg (CTABS)"
+        continue
+    fi
+    # Case 2: Standard VTS latency JSON (baseline / hwbinder, average across pairs)
     if grep -q '"other_ms"' "$f" 2>/dev/null; then
-        avg=$(grep -o '"other_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || \
-              grep -o '"fifo_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$' || echo "N/A")
+        avgs=$(grep -o '"other_ms":{[[:space:]]*"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
+        if [ -z "$avgs" ]; then
+            avgs=$(grep -o '"fifo_ms":{[[:space:]]*"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
+        fi
+        avg=$(echo "$avgs" | awk '{sum+=$1; n++} END {if(n>0) printf "%.4g", sum/n; else print "N/A"}')
         echo "  $label => avg_ms=$avg"
         continue
     fi
