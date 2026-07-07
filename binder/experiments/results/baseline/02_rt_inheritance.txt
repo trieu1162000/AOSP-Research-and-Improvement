@@ -1,0 +1,1595 @@
+=== CTABS Validation Runner: Tue Jul  7 12:00:52 +07 2026 ===
+ITER=10000 PAIR=4 PUSH=0 PERF=0 TRACE=0 OUT=./ctabs_results_1783400452
+=== Setting CPU governor to performance ===
+adbd is already running as root
+=== CPU Topology ===
+cpu0: core=0 cluster=0 max_freq=1785600
+cpu1: core=1 cluster=0 max_freq=1785600
+cpu2: core=2 cluster=0 max_freq=1785600
+cpu3: core=3 cluster=0 max_freq=1785600
+cpu4: core=0 cluster=1 max_freq=2131200
+cpu5: core=1 cluster=1 max_freq=2131200
+cpu6: core=2 cluster=1 max_freq=2131200
+cpu7: core=0 cluster=2 max_freq=2419200
+=== Computing cluster CPU masks ===
+Cluster masks: [cluster0=0xf cluster1=0x70 cluster2=0x80]
+
+=== [1/7] Binder latency — baseline schd-dbg (standard VTS) ===
+
+--- Running: 1_binder_latency_baseline ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500},
+"P0":{"SYNC":"GOOD","S":19843,"I":20000,"R":0.99215,
+  "other_ms":{ "avg":0.17,"wst":4.2 ,"bst":0.043,"miss":1,"meetR":0.9999},
+  "fifo_ms": { "avg":0.094,"wst":0.51,"bst":0.05,"miss":0,"meetR":1}
+},
+"P1":{"SYNC":"GOOD","S":19828,"I":20000,"R":0.9914,
+  "other_ms":{ "avg":0.17,"wst":2   ,"bst":0.043,"miss":0,"meetR":1},
+  "fifo_ms": { "avg":0.095,"wst":0.41,"bst":0.05,"miss":0,"meetR":1}
+},
+"P2":{"SYNC":"GOOD","S":19833,"I":20000,"R":0.99165,
+  "other_ms":{ "avg":0.17,"wst":6   ,"bst":0.043,"miss":2,"meetR":0.9998},
+  "fifo_ms": { "avg":0.095,"wst":0.91,"bst":0.051,"miss":0,"meetR":1}
+},
+"P3":{"SYNC":"GOOD","S":19784,"I":20000,"R":0.9892,
+  "other_ms":{ "avg":0.17,"wst":3.8 ,"bst":0.044,"miss":3,"meetR":0.9997},
+  "fifo_ms": { "avg":0.095,"wst":0.44,"bst":0.05,"miss":0,"meetR":1}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783400452/1_binder_latency_baseline.json
+
+=== [2/7] Binder latency — CTABS organic (no affinity pin) ===
+
+--- Running: 2_ctabs_binder_latency_organic ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":7788,"I":20000,"R":0.3894,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.12,"wst":1.8 ,"bst":0.046,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3875,
+      "same_cluster":{"avg":0.12,"wst":2   ,"bst":0.052,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":4028,
+      "cross_cluster":{"avg":0.15,"wst":2.2 ,"bst":0.058,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2097
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":3.5 ,"bst":0.044,"miss":1,"meetR":0.99974},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3913,
+      "same_cluster":{"avg":0.13,"wst":1.5 ,"bst":0.054,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3542,
+      "cross_cluster":{"avg":0.2 ,"wst":3.4 ,"bst":0.062,"miss":1,"meetR":0.99961},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2545
+    },
+    "fifo_total_ms":{"avg":0.13,"wst":2.2 ,"bst":0.046,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":3.5 ,"bst":0.044,"miss":2,"meetR":0.9998},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":7813,"I":20000,"R":0.39065,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1.2 ,"bst":0.046,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3882,
+      "same_cluster":{"avg":0.12,"wst":2   ,"bst":0.044,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3985,
+      "cross_cluster":{"avg":0.15,"wst":1.6 ,"bst":0.06,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2133
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.6 ,"bst":0.043,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3931,
+      "same_cluster":{"avg":0.13,"wst":1.5 ,"bst":0.055,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3632,
+      "cross_cluster":{"avg":0.2 ,"wst":1.5 ,"bst":0.053,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2437
+    },
+    "fifo_total_ms":{"avg":0.13,"wst":2   ,"bst":0.044,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":1.6 ,"bst":0.043,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair1.csv
+  "P2": {
+    "SYNC":"POOR","S":7876,"I":20000,"R":0.3938,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1.9 ,"bst":0.047,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3896,
+      "same_cluster":{"avg":0.13,"wst":2.1 ,"bst":0.048,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3988,
+      "cross_cluster":{"avg":0.14,"wst":1.2 ,"bst":0.061,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2116
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":3.3 ,"bst":0.043,"miss":1,"meetR":0.99975},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3980,
+      "same_cluster":{"avg":0.14,"wst":3.3 ,"bst":0.055,"miss":1,"meetR":0.99972},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3526,
+      "cross_cluster":{"avg":0.2 ,"wst":1.8 ,"bst":0.048,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2494
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":2.1 ,"bst":0.047,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":3.3 ,"bst":0.043,"miss":2,"meetR":0.9998},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair2.csv
+  "P3": {
+    "SYNC":"POOR","S":7679,"I":20000,"R":0.38395,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.12,"wst":2.5 ,"bst":0.048,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3830,
+      "same_cluster":{"avg":0.12,"wst":1.2 ,"bst":0.047,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3834,
+      "cross_cluster":{"avg":0.14,"wst":2.1 ,"bst":0.061,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2336
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":2   ,"bst":0.044,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3849,
+      "same_cluster":{"avg":0.13,"wst":1.7 ,"bst":0.056,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3475,
+      "cross_cluster":{"avg":0.19,"wst":2.1 ,"bst":0.047,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2676
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":2.5 ,"bst":0.047,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":2.1 ,"bst":0.044,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783400452/2_ctabs_binder_latency_organic.json
+
+=== [3/7] CTABS same-cluster: all on cluster0 (0xf) ===
+
+--- Running: 3_ctabs_same_cluster ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500,"pin_servers":"0xf"
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":9.4 ,"bst":0.07,"miss":4,"meetR":0.9996},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":3.8 ,"bst":0.066,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":9.4 ,"bst":0.07,"miss":4,"meetR":0.9996},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":3.8 ,"bst":0.066,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":6.2 ,"bst":0.062,"miss":6,"meetR":0.9994},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":2.6 ,"bst":0.066,"miss":2,"meetR":0.9998},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":6.2 ,"bst":0.062,"miss":6,"meetR":0.9994},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":2.6 ,"bst":0.066,"miss":2,"meetR":0.9998},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair1.csv
+  "P2": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":2.5 ,"bst":0.067,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":4.6 ,"bst":0.065,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":2.5 ,"bst":0.067,"miss":1,"meetR":0.9999},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":4.6 ,"bst":0.065,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair2.csv
+  "P3": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":4.7 ,"bst":0.07,"miss":5,"meetR":0.9995},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":2.9 ,"bst":0.065,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":4.7 ,"bst":0.07,"miss":5,"meetR":0.9995},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":2.9 ,"bst":0.065,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783400452/3_ctabs_same_cluster.json
+
+=== [4/7] CTABS cross-cluster: servers=0xf clients=0x70 ===
+
+--- Running: 4_ctabs_cross_cluster ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500,"pin_servers":"0xf","pin_clients":"0x70"
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":1097,"I":20000,"R":0.05485,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.2 ,"bst":0.064,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":623,
+      "same_cluster":{"avg":0.16,"wst":1.6 ,"bst":0.064,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1098,
+      "cross_cluster":{"avg":0.095,"wst":1.1 ,"bst":0.045,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8279
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.19,"wst":1.5 ,"bst":0.079,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "same_core_n":474,
+      "same_cluster":{"avg":0.18,"wst":1.2 ,"bst":0.06,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1094,
+      "cross_cluster":{"avg":0.13,"wst":2.3 ,"bst":0.044,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8432
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":1.6 ,"bst":0.045,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.3 ,"bst":0.044,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":1140,"I":20000,"R":0.057,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":2.3 ,"bst":0.068,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":639,
+      "same_cluster":{"avg":0.16,"wst":1.6 ,"bst":0.067,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1065,
+      "cross_cluster":{"avg":0.094,"wst":0.84,"bst":0.047,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8296
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.18,"wst":0.9 ,"bst":0.062,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":501,
+      "same_cluster":{"avg":0.19,"wst":1.3 ,"bst":0.057,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1200,
+      "cross_cluster":{"avg":0.13,"wst":2.9 ,"bst":0.043,"miss":1,"meetR":0.99988},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8299
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":2.3 ,"bst":0.047,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.9 ,"bst":0.043,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair1.csv
+  "P2": {
+    "SYNC":"POOR","S":1124,"I":20000,"R":0.0562,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":0.97,"bst":0.064,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":595,
+      "same_cluster":{"avg":0.16,"wst":1.8 ,"bst":0.068,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1120,
+      "cross_cluster":{"avg":0.095,"wst":2.8 ,"bst":0.038,"miss":1,"meetR":0.99988},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8285
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.19,"wst":0.9 ,"bst":0.065,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":529,
+      "same_cluster":{"avg":0.18,"wst":1.7 ,"bst":0.061,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1143,
+      "cross_cluster":{"avg":0.13,"wst":2.4 ,"bst":0.039,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8328
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":2.8 ,"bst":0.038,"miss":1,"meetR":0.9999},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.14,"wst":2.4 ,"bst":0.039,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair2.csv
+  "P3": {
+    "SYNC":"POOR","S":1119,"I":20000,"R":0.05595,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.15,"wst":0.93,"bst":0.064,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":581,
+      "same_cluster":{"avg":0.15,"wst":0.95,"bst":0.07,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1115,
+      "cross_cluster":{"avg":0.094,"wst":2.3 ,"bst":0.044,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8304
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.19,"wst":1.1 ,"bst":0.071,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "same_core_n":538,
+      "same_cluster":{"avg":0.19,"wst":1.5 ,"bst":0.066,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1090,
+      "cross_cluster":{"avg":0.13,"wst":1.4 ,"bst":0.043,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8372
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":2.3 ,"bst":0.044,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":1.5 ,"bst":0.043,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783400452/4_ctabs_cross_cluster.json
+
+=== [5/7] HW-binder latency — standard VTS ===
+
+--- Running: 5_hwbinder_latency_baseline ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":53148,"I":80000,"R":0.66435,
+  "other_ms":{ "avg":0.17, "wst":4.3 , "bst":0.037, "miss":5, "meetR":0.99987},
+  "fifo_ms": { "avg":0.095, "wst":1.1 , "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P0":{"SYNC":"GOOD","S":13257,"I":20000,"R":0.66285,
+  "other_ms":{ "avg":0.17, "wst":4.3 , "bst":0.037, "miss":2, "meetR":0.9998},
+  "fifo_ms": { "avg":0.095, "wst":0.48, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P1":{"SYNC":"GOOD","S":13342,"I":20000,"R":0.6671,
+  "other_ms":{ "avg":0.17, "wst":3.5 , "bst":0.045, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.095, "wst":0.75, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P2":{"SYNC":"GOOD","S":13242,"I":20000,"R":0.6621,
+  "other_ms":{ "avg":0.17, "wst":2.2 , "bst":0.042, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.095, "wst":0.44, "bst":0.051, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P3":{"SYNC":"GOOD","S":13307,"I":20000,"R":0.66535,
+  "other_ms":{ "avg":0.17, "wst":3.8 , "bst":0.045, "miss":2, "meetR":0.9998},
+  "fifo_ms": { "avg":0.095, "wst":1.1 , "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783400452/5_hwbinder_latency_baseline.json
+
+    [5b] HW-binder latency — same-cluster (0xf) ===
+
+--- Running: 5b_hwbinder_latency_same_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":49570,"I":80000,"R":0.619625,
+  "other_ms":{ "avg":0.25, "wst":8.1 , "bst":0.068, "miss":3, "meetR":0.99992},
+  "fifo_ms": { "avg":0.14, "wst":1.8 , "bst":0.079, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P0":{"SYNC":"GOOD","S":12479,"I":20000,"R":0.62395,
+  "other_ms":{ "avg":0.25, "wst":8.1 , "bst":0.078, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.14, "wst":1.5 , "bst":0.079, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P1":{"SYNC":"GOOD","S":12450,"I":20000,"R":0.6225,
+  "other_ms":{ "avg":0.25, "wst":2.3 , "bst":0.076, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.14, "wst":1.1 , "bst":0.092, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P2":{"SYNC":"GOOD","S":12351,"I":20000,"R":0.61755,
+  "other_ms":{ "avg":0.25, "wst":2.3 , "bst":0.068, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.14, "wst":1.8 , "bst":0.094, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P3":{"SYNC":"GOOD","S":12290,"I":20000,"R":0.6145,
+  "other_ms":{ "avg":0.25, "wst":4.8 , "bst":0.078, "miss":2, "meetR":0.9998},
+  "fifo_ms": { "avg":0.14, "wst":1.5 , "bst":0.093, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783400452/5b_hwbinder_latency_same_cluster.json
+
+    [5c] HW-binder latency — cross-cluster servers=0xf clients=0x70 ===
+
+--- Running: 5c_hwbinder_latency_cross_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf","pin_clients":"0x70"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"POOR","S":0,"I":80000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.3 , "bst":0.053, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.13, "wst":0.72, "bst":0.068, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P0":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.2 , "bst":0.054, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.13, "wst":0.59, "bst":0.068, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P1":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.3 , "bst":0.055, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.13, "wst":0.72, "bst":0.068, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P2":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.2 , "bst":0.059, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.13, "wst":0.6 , "bst":0.07, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P3":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.1 , "bst":0.053, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.13, "wst":0.64, "bst":0.07, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783400452/5c_hwbinder_latency_cross_cluster.json
+
+=== [6/7] Binder throughput tests ===
+
+--- Running: 6a_binder_throughput_multiproc ---
+waiting for workers to complete
+Created BinderWorker0
+Created BinderWorker1
+iterations per sec: 42075.9
+collecting results
+killing workers
+average:0.0437982ms worst:1.43271ms best:0.029375ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312
+Saved: ./ctabs_results_1783400452/6a_binder_throughput_multiproc.json
+
+--- Running: 6b_binder_throughput_payload_sweep ---
+2026-07-01T16:09:50+00:00
+Running /data/local/tmp/libbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations
+------------------------------------------------------------------
+BM_sendVec_binder/4          45078 ns        20370 ns        32469
+BM_sendVec_binder/8          44972 ns        20335 ns        34399
+BM_sendVec_binder/16         45067 ns        20561 ns        34260
+BM_sendVec_binder/32         44971 ns        20353 ns        34569
+BM_sendVec_binder/64         45570 ns        20802 ns        33596
+BM_sendVec_binder/128        46059 ns        20986 ns        33250
+BM_sendVec_binder/256        46464 ns        21398 ns        32846
+BM_sendVec_binder/512        47464 ns        22155 ns        31615
+BM_sendVec_binder/1024       51128 ns        25663 ns        29627
+BM_sendVec_binder/2048       52527 ns        28348 ns        24654
+BM_sendVec_binder/4096       58828 ns        33895 ns        20635
+BM_sendVec_binder/8192       71905 ns        45277 ns        15441
+BM_sendVec_binder/16384      98266 ns        68073 ns        10360
+BM_sendVec_binder/32768     151891 ns       113309 ns         6200
+BM_sendVec_binder/65536     322479 ns       235599 ns         2973
+Saved: ./ctabs_results_1783400452/6b_binder_throughput_payload_sweep.json
+
+=== [7/7] HW-binder throughput tests ===
+
+--- Running: 7a_hwbinder_throughput_multiproc ---
+creating service: hwbinderService0
+creating service: hwbinderService1
+waiting for workers to complete
+iterations per sec: 21049.9
+collecting results
+average:0.0942902ms worst:0.627656ms best:0.024844ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312
+killing services
+killing workers
+Saved: ./ctabs_results_1783400452/7a_hwbinder_throughput_multiproc.json
+
+--- Running: 7b_hwbinder_throughput_payload_sweep ---
+2026-07-01T16:10:19+00:00
+Running /data/local/tmp/libhwbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+---------------------------------------------------------------------
+Benchmark                           Time             CPU   Iterations
+---------------------------------------------------------------------
+BM_sendVec_binderize/4          47454 ns        20865 ns        30775
+BM_sendVec_binderize/8          47365 ns        20791 ns        33759
+BM_sendVec_binderize/16         47410 ns        20780 ns        33604
+BM_sendVec_binderize/32         47229 ns        20810 ns        33683
+BM_sendVec_binderize/64         48236 ns        22019 ns        33663
+BM_sendVec_binderize/128        47512 ns        20815 ns        33649
+BM_sendVec_binderize/256        47594 ns        20865 ns        33562
+BM_sendVec_binderize/512        47778 ns        20925 ns        33484
+BM_sendVec_binderize/1024       47530 ns        20901 ns        33398
+BM_sendVec_binderize/2048       47793 ns        21077 ns        33272
+BM_sendVec_binderize/4096       48500 ns        21376 ns        32750
+BM_sendVec_binderize/8192       49556 ns        21751 ns        32014
+BM_sendVec_binderize/16384      51880 ns        22770 ns        30546
+BM_sendVec_binderize/32768      56029 ns        24984 ns        28081
+BM_sendVec_binderize/65536      64557 ns        29009 ns        24202
+Saved: ./ctabs_results_1783400452/7b_hwbinder_throughput_payload_sweep.json
+
+=== Collecting dmesg + logcat ===
+
+=== DONE ===
+Results in: ./ctabs_results_1783400452
+total 13M
+-rwxrwxrwx 1 neungayay neungayay  896 Jul  7 12:00 1_binder_latency_baseline.json
+-rwxrwxrwx 1 neungayay neungayay 7.8K Jul  7 12:01 2_ctabs_binder_latency_organic.json
+-rwxrwxrwx 1 neungayay neungayay 7.9K Jul  7 12:01 3_ctabs_same_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 7.9K Jul  7 12:01 4_ctabs_cross_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 2.2K Jul  7 12:01 5_hwbinder_latency_baseline.json
+-rwxrwxrwx 1 neungayay neungayay 2.2K Jul  7 12:01 5b_hwbinder_latency_same_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 2.2K Jul  7 12:01 5c_hwbinder_latency_cross_cluster.json
+-rwxrwxrwx 1 neungayay neungayay  256 Jul  7 12:01 6a_binder_throughput_multiproc.json
+-rwxrwxrwx 1 neungayay neungayay 1.2K Jul  7 12:02 6b_binder_throughput_payload_sweep.json
+-rwxrwxrwx 1 neungayay neungayay  301 Jul  7 12:02 7a_hwbinder_throughput_multiproc.json
+-rwxrwxrwx 1 neungayay neungayay 1.3K Jul  7 12:02 7b_hwbinder_throughput_payload_sweep.json
+-rwxrwxrwx 1 neungayay neungayay   41 Jul  7 12:00 cluster_masks.txt
+-rwxrwxrwx 1 neungayay neungayay  38K Jul  7 12:02 dmesg.txt
+-rwxrwxrwx 1 neungayay neungayay  13M Jul  7 12:02 logcat.txt
+-rwxrwxrwx 1 neungayay neungayay  38K Jul  7 12:02 runner.log
+-rwxrwxrwx 1 neungayay neungayay  328 Jul  7 12:00 topology.txt
+
+=== Quick latency summary ===
+  1_binder_latency_baseline => avg_ms=0.17
+  2_ctabs_binder_latency_organic => avg_ms=0.15 (CTABS)
+  3_ctabs_same_cluster => avg_ms=0.16 (CTABS)
+  4_ctabs_cross_cluster => avg_ms=0.14 (CTABS)
+  5_hwbinder_latency_baseline => avg_ms=0.17
+  5b_hwbinder_latency_same_cluster => avg_ms=0.25
+  5c_hwbinder_latency_cross_cluster => avg_ms=0.14
+  6a_binder_throughput_multiproc => avg_ms=0.0437982 (throughput)
+  6b_binder_throughput_payload_sweep => avg_ms=.0450 (benchmark)
+  7a_hwbinder_throughput_multiproc => avg_ms=0.0942902 (throughput)
+  7b_hwbinder_throughput_payload_sweep => avg_ms=.0474 (benchmark)
+
+=== Next steps ===
+  1. Compare baseline vs CTABS avg/p99 for same-cluster and cross-cluster scenarios.
+  2. If PERF was enabled, check *_perf.txt for L1/LLC miss counts.
+  3. If TRACE was enabled, open trace*.pb in Perfetto UI (ui.perfetto.dev)
+     SQL: SELECT ts, name, cpu FROM ftrace WHERE name LIKE 'binder%' ORDER BY ts LIMIT 200;
+  4. Run analyze_ctabs.py (if available) on CSV files for per-tier p50/p90/p99 plots.
+neungayay@VHDMF10-NC100IL:/mnt/e/external/aosp_research/binder$ cd bin/
+neungayay@VHDMF10-NC100IL:/mnt/e/external/aosp_research/binder/bin$ cd egg/
+neungayay@VHDMF10-NC100IL:/mnt/e/external/aosp_research/binder/bin/egg$ adb push  * /data/local/tmp/
+binderThroughputTest.txt: 1 file pushed, 0 skipped. 71.2 MB/s (136016 bytes in 0.002s)
+hwbinderThroughputTest.txt: 1 file pushed, 0 skipped. 102.8 MB/s (857904 bytes in 0.008s)
+libbinder_benchmark.txt: 1 file pushed, 0 skipped. 97.2 MB/s (211560 bytes in 0.002s)
+libhwbinder_benchmark.txt: 1 file pushed, 0 skipped. 116.5 MB/s (1057032 bytes in 0.009s)
+libhwbinder_latency.txt: 1 file pushed, 0 skipped. 96.7 MB/s (858480 bytes in 0.008s)
+schd-dbg-ctabs.txt: 1 file pushed, 0 skipped. 65.6 MB/s (137896 bytes in 0.002s)
+schd-dbg.txt: 1 file pushed, 0 skipped. 97.5 MB/s (137592 bytes in 0.001s)
+7 files pushed, 0 skipped. 56.9 MB/s (3396480 bytes in 0.057s)
+neungayay@VHDMF10-NC100IL:/mnt/e/external/aosp_research/binder/bin/egg$ cd ../../
+neungayay@VHDMF10-NC100IL:/mnt/e/external/aosp_research/binder$ ./ctabs_validation_runner.sh
+=== CTABS Validation Runner: Tue Jul  7 12:51:00 +07 2026 ===
+ITER=10000 PAIR=4 PUSH=0 PERF=0 TRACE=0 OUT=./ctabs_results_1783403460
+=== Setting CPU governor to performance ===
+adbd is already running as root
+=== CPU Topology ===
+cpu0: core=0 cluster=0 max_freq=1785600
+cpu1: core=1 cluster=0 max_freq=1785600
+cpu2: core=2 cluster=0 max_freq=1785600
+cpu3: core=3 cluster=0 max_freq=1785600
+cpu4: core=0 cluster=1 max_freq=2131200
+cpu5: core=1 cluster=1 max_freq=2131200
+cpu6: core=2 cluster=1 max_freq=2131200
+cpu7: core=0 cluster=2 max_freq=2419200
+=== Computing cluster CPU masks ===
+Cluster masks: [cluster0=0xf cluster1=0x70 cluster2=0x80]
+
+=== [1/7] Binder latency — baseline schd-dbg (standard VTS) ===
+
+--- Running: 1_binder_latency_baseline ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500},
+"P0":{"SYNC":"GOOD","S":19841,"I":20000,"R":0.99205,
+  "other_ms":{ "avg":0.16,"wst":2.9 ,"bst":0.043,"miss":1,"meetR":0.9999},
+  "fifo_ms": { "avg":0.094,"wst":0.44,"bst":0.05,"miss":0,"meetR":1}
+},
+"P1":{"SYNC":"GOOD","S":19803,"I":20000,"R":0.99015,
+  "other_ms":{ "avg":0.16,"wst":2.4 ,"bst":0.043,"miss":0,"meetR":1},
+  "fifo_ms": { "avg":0.094,"wst":0.46,"bst":0.05,"miss":0,"meetR":1}
+},
+"P2":{"SYNC":"GOOD","S":19828,"I":20000,"R":0.9914,
+  "other_ms":{ "avg":0.16,"wst":2.4 ,"bst":0.043,"miss":0,"meetR":1},
+  "fifo_ms": { "avg":0.094,"wst":0.42,"bst":0.05,"miss":0,"meetR":1}
+},
+"P3":{"SYNC":"GOOD","S":19828,"I":20000,"R":0.9914,
+  "other_ms":{ "avg":0.16,"wst":4.7 ,"bst":0.043,"miss":3,"meetR":0.9997},
+  "fifo_ms": { "avg":0.094,"wst":0.44,"bst":0.05,"miss":0,"meetR":1}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783403460/1_binder_latency_baseline.json
+
+=== [2/7] Binder latency — CTABS organic (no affinity pin) ===
+
+--- Running: 2_ctabs_binder_latency_organic ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":7796,"I":20000,"R":0.3898,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1   ,"bst":0.045,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":3859,
+      "same_cluster":{"avg":0.12,"wst":2.3 ,"bst":0.05,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":3978,
+      "cross_cluster":{"avg":0.15,"wst":1.3 ,"bst":0.056,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2163
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.4 ,"bst":0.043,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3937,
+      "same_cluster":{"avg":0.13,"wst":1.2 ,"bst":0.055,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3599,
+      "cross_cluster":{"avg":0.2 ,"wst":2.5 ,"bst":0.06,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2464
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":2.3 ,"bst":0.045,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":2.5 ,"bst":0.043,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":7875,"I":20000,"R":0.39375,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1   ,"bst":0.046,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":4001,
+      "same_cluster":{"avg":0.12,"wst":2.3 ,"bst":0.046,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3948,
+      "cross_cluster":{"avg":0.15,"wst":1.1 ,"bst":0.057,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2051
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.9 ,"bst":0.043,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3874,
+      "same_cluster":{"avg":0.13,"wst":1.2 ,"bst":0.054,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3528,
+      "cross_cluster":{"avg":0.2 ,"wst":2.2 ,"bst":0.049,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2598
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":2.3 ,"bst":0.046,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":2.2 ,"bst":0.043,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair1.csv
+CSV written: /data/local/tmp/ctabs_organic_pair2.csv
+  "P2": {
+    "SYNC":"POOR","S":7792,"I":20000,"R":0.3896,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1.1 ,"bst":0.046,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":3887,
+      "same_cluster":{"avg":0.12,"wst":1.1 ,"bst":0.053,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3969,
+      "cross_cluster":{"avg":0.15,"wst":0.84,"bst":0.058,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2144
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":0.96,"bst":0.044,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3905,
+      "same_cluster":{"avg":0.13,"wst":1.8 ,"bst":0.054,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3553,
+      "cross_cluster":{"avg":0.2 ,"wst":2.6 ,"bst":0.063,"miss":1,"meetR":0.99961},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2542
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":1.1 ,"bst":0.046,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":2.6 ,"bst":0.044,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+  "P3": {
+    "SYNC":"POOR","S":7812,"I":20000,"R":0.3906,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.11,"wst":1.3 ,"bst":0.047,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3899,
+      "same_cluster":{"avg":0.12,"wst":2.3 ,"bst":0.049,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3952,
+      "cross_cluster":{"avg":0.14,"wst":2.2 ,"bst":0.053,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":2149
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.5 ,"bst":0.044,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":3913,
+      "same_cluster":{"avg":0.13,"wst":1.3 ,"bst":0.055,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":3459,
+      "cross_cluster":{"avg":0.19,"wst":1.6 ,"bst":0.053,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.586,"p99":0.586},
+      "cross_cluster_n":2628
+    },
+    "fifo_total_ms":{"avg":0.12,"wst":2.3 ,"bst":0.047,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":1.6 ,"bst":0.044,"miss":0,"meetR":1},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_organic_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783403460/2_ctabs_binder_latency_organic.json
+
+=== [3/7] CTABS same-cluster: all on cluster0 (0xf) ===
+
+--- Running: 3_ctabs_same_cluster ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500,"pin_servers":"0xf"
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":8.5 ,"bst":0.066,"miss":5,"meetR":0.9995},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":3.8 ,"bst":0.065,"miss":3,"meetR":0.9997},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":8.5 ,"bst":0.066,"miss":5,"meetR":0.9995},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":3.8 ,"bst":0.065,"miss":3,"meetR":0.9997},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":3.8 ,"bst":0.07,"miss":3,"meetR":0.9997},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.15,"wst":5.1 ,"bst":0.065,"miss":4,"meetR":0.9996},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":3.8 ,"bst":0.07,"miss":3,"meetR":0.9997},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.15,"wst":5.1 ,"bst":0.065,"miss":4,"meetR":0.9996},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair1.csv
+  "P2": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":8.5 ,"bst":0.062,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":9.5 ,"bst":0.063,"miss":4,"meetR":0.9996},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":8.5 ,"bst":0.062,"miss":1,"meetR":0.9999},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":9.5 ,"bst":0.063,"miss":4,"meetR":0.9996},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair2.csv
+  "P3": {
+    "SYNC":"POOR","S":0,"I":20000,"R":0,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.14,"wst":14  ,"bst":0.065,"miss":2,"meetR":0.9998},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_core_n":0,
+      "same_cluster":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "same_cluster_n":0,
+      "cross_cluster":{"avg":0.16,"wst":2.6 ,"bst":0.065,"miss":1,"meetR":0.9999},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":10000
+    },
+    "fifo_total_ms":{"avg":0.14,"wst":14  ,"bst":0.065,"miss":2,"meetR":0.9998},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+    "other_total_ms":{"avg":0.16,"wst":2.6 ,"bst":0.065,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_same_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783403460/3_ctabs_same_cluster.json
+
+=== [4/7] CTABS cross-cluster: servers=0xf clients=0x70 ===
+
+--- Running: 4_ctabs_cross_cluster ---
+{
+  "cfg": {
+    "pair":4,"iterations":10000,"payload":16,"deadline_us":2500,"pin_servers":"0xf","pin_clients":"0x70"
+  },
+  "topology": {
+    "nr_cpus": 8,
+    "cpus": [
+      {"cpu":0,"core":0,"cluster":0},
+      {"cpu":1,"core":1,"cluster":0},
+      {"cpu":2,"core":2,"cluster":0},
+      {"cpu":3,"core":3,"cluster":0},
+      {"cpu":4,"core":0,"cluster":1},
+      {"cpu":5,"core":1,"cluster":1},
+      {"cpu":6,"core":2,"cluster":1},
+      {"cpu":7,"core":0,"cluster":2}
+    ]
+  },
+  "P0": {
+    "SYNC":"POOR","S":1097,"I":20000,"R":0.05485,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.2 ,"bst":0.063,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":616,
+      "same_cluster":{"avg":0.16,"wst":1.3 ,"bst":0.069,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1108,
+      "cross_cluster":{"avg":0.094,"wst":3.2 ,"bst":0.048,"miss":1,"meetR":0.99988},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8276
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.18,"wst":1.5 ,"bst":0.063,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":481,
+      "same_cluster":{"avg":0.18,"wst":1.4 ,"bst":0.065,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1150,
+      "cross_cluster":{"avg":0.13,"wst":2.5 ,"bst":0.045,"miss":1,"meetR":0.99988},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8369
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":3.2 ,"bst":0.048,"miss":1,"meetR":0.9999},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.5 ,"bst":0.045,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair0.csv
+  "P1": {
+    "SYNC":"POOR","S":1111,"I":20000,"R":0.05555,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":0.88,"bst":0.062,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":591,
+      "same_cluster":{"avg":0.15,"wst":1.1 ,"bst":0.067,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1107,
+      "cross_cluster":{"avg":0.093,"wst":0.69,"bst":0.048,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8302
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.19,"wst":1.5 ,"bst":0.058,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.977},
+      "same_core_n":520,
+      "same_cluster":{"avg":0.19,"wst":1.3 ,"bst":0.065,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1077,
+      "cross_cluster":{"avg":0.13,"wst":2.9 ,"bst":0.044,"miss":2,"meetR":0.99976},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8403
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":1.1 ,"bst":0.048,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.9 ,"bst":0.044,"miss":2,"meetR":0.9998},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair1.csv
+  "P2": {
+    "SYNC":"POOR","S":1023,"I":20000,"R":0.05115,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.15,"wst":0.85,"bst":0.066,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":525,
+      "same_cluster":{"avg":0.16,"wst":1.5 ,"bst":0.062,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1130,
+      "cross_cluster":{"avg":0.093,"wst":0.82,"bst":0.048,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8345
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.19,"wst":1.2 ,"bst":0.079,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.977},
+      "same_core_n":498,
+      "same_cluster":{"avg":0.19,"wst":2.9 ,"bst":0.058,"miss":1,"meetR":0.99911},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1122,
+      "cross_cluster":{"avg":0.13,"wst":2.4 ,"bst":0.043,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8380
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":1.5 ,"bst":0.048,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.9 ,"bst":0.043,"miss":1,"meetR":0.9999},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair2.csv
+  "P3": {
+    "SYNC":"POOR","S":1096,"I":20000,"R":0.0548,
+    "fifo_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.14,"wst":1.7 ,"bst":0.064,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":581,
+      "same_cluster":{"avg":0.17,"wst":1.3 ,"bst":0.062,"miss":0,"meetR":1},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.977},
+      "same_cluster_n":1121,
+      "cross_cluster":{"avg":0.093,"wst":0.96,"bst":0.049,"miss":0,"meetR":1},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "cross_cluster_n":8298
+    },
+    "other_tiered": {
+      "unknown":{"avg":0   ,"wst":0   ,"bst":1.8e+13,"miss":0,"meetR":0},
+      "unknown_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+      "unknown_n":0,
+      "same_core":{"avg":0.18,"wst":1   ,"bst":0.068,"miss":0,"meetR":1},
+      "same_core_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_core_n":515,
+      "same_cluster":{"avg":0.19,"wst":2.6 ,"bst":0.066,"miss":1,"meetR":0.99908},
+      "same_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "same_cluster_n":1086,
+      "cross_cluster":{"avg":0.13,"wst":2.7 ,"bst":0.045,"miss":1,"meetR":0.99988},
+      "cross_cluster_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586},
+      "cross_cluster_n":8399
+    },
+    "fifo_total_ms":{"avg":0.1 ,"wst":1.7 ,"bst":0.049,"miss":0,"meetR":1},
+    "fifo_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.195},
+    "other_total_ms":{"avg":0.14,"wst":2.7 ,"bst":0.045,"miss":2,"meetR":0.9998},
+    "other_total_pct":{"p50":0.195,"p90":0.195,"p95":0.195,"p99":0.586}
+  },
+CSV written: /data/local/tmp/ctabs_cross_pair3.csv
+  "inheritance": "FAIL"
+}
+Saved: ./ctabs_results_1783403460/4_ctabs_cross_cluster.json
+
+=== [5/7] HW-binder latency — standard VTS ===
+
+--- Running: 5_hwbinder_latency_baseline ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":52894,"I":80000,"R":0.661175,
+  "other_ms":{ "avg":0.17, "wst":4.2 , "bst":0.04, "miss":5, "meetR":0.99987},
+  "fifo_ms": { "avg":0.094, "wst":0.53, "bst":0.049, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P0":{"SYNC":"GOOD","S":13180,"I":20000,"R":0.659,
+  "other_ms":{ "avg":0.17, "wst":3.1 , "bst":0.044, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.094, "wst":0.48, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P1":{"SYNC":"GOOD","S":13154,"I":20000,"R":0.6577,
+  "other_ms":{ "avg":0.17, "wst":4.2 , "bst":0.043, "miss":3, "meetR":0.9997},
+  "fifo_ms": { "avg":0.095, "wst":0.44, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P2":{"SYNC":"GOOD","S":13225,"I":20000,"R":0.66125,
+  "other_ms":{ "avg":0.17, "wst":2   , "bst":0.043, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.094, "wst":0.53, "bst":0.049, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P3":{"SYNC":"GOOD","S":13335,"I":20000,"R":0.66675,
+  "other_ms":{ "avg":0.17, "wst":3.7 , "bst":0.04, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.094, "wst":0.45, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783403460/5_hwbinder_latency_baseline.json
+
+    [5b] HW-binder latency — same-cluster (0xf) ===
+
+--- Running: 5b_hwbinder_latency_same_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":49139,"I":80000,"R":0.614237,
+  "other_ms":{ "avg":0.25, "wst":2.9 , "bst":0.077, "miss":4, "meetR":0.9999},
+  "fifo_ms": { "avg":0.14, "wst":5.4 , "bst":0.085, "miss":1, "meetR":0.99997},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P0":{"SYNC":"GOOD","S":12231,"I":20000,"R":0.61155,
+  "other_ms":{ "avg":0.25, "wst":2.2 , "bst":0.079, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.14, "wst":5.4 , "bst":0.091, "miss":1, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P1":{"SYNC":"GOOD","S":12353,"I":20000,"R":0.61765,
+  "other_ms":{ "avg":0.25, "wst":2.6 , "bst":0.079, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.14, "wst":1.7 , "bst":0.092, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P2":{"SYNC":"GOOD","S":12268,"I":20000,"R":0.6134,
+  "other_ms":{ "avg":0.25, "wst":2.7 , "bst":0.081, "miss":2, "meetR":0.9998},
+  "fifo_ms": { "avg":0.14, "wst":1.5 , "bst":0.085, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P3":{"SYNC":"GOOD","S":12287,"I":20000,"R":0.61435,
+  "other_ms":{ "avg":0.25, "wst":2.9 , "bst":0.077, "miss":1, "meetR":0.9999},
+  "fifo_ms": { "avg":0.14, "wst":1.4 , "bst":0.091, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783403460/5b_hwbinder_latency_same_cluster.json
+
+    [5c] HW-binder latency — cross-cluster servers=0xf clients=0x70 ===
+
+--- Running: 5c_hwbinder_latency_cross_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf","pin_clients":"0x70"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"POOR","S":0,"I":80000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.4 , "bst":0.058, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.12, "wst":0.67, "bst":0.067, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P0":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.4 , "bst":0.061, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.12, "wst":0.67, "bst":0.071, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P1":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.2 , "bst":0.058, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.12, "wst":0.59, "bst":0.069, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P2":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.1 , "bst":0.059, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.12, "wst":0.57, "bst":0.067, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P3":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.14, "wst":1.1 , "bst":0.063, "miss":0, "meetR":1},
+  "fifo_ms": { "avg":0.12, "wst":0.54, "bst":0.071, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783403460/5c_hwbinder_latency_cross_cluster.json
+
+=== [6/7] Binder throughput tests ===
+
+--- Running: 6a_binder_throughput_multiproc ---
+waiting for workers to complete
+Created BinderWorker0
+Created BinderWorker1
+iterations per sec: 42447.7
+collecting results
+killing workers
+average:0.0413401ms worst:0.508958ms best:0.02901ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312
+Saved: ./ctabs_results_1783403460/6a_binder_throughput_multiproc.json
+
+--- Running: 6b_binder_throughput_payload_sweep ---
+2026-07-01T17:00:01+00:00
+Running /data/local/tmp/libbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations
+------------------------------------------------------------------
+BM_sendVec_binder/4          45048 ns        20381 ns        31064
+BM_sendVec_binder/8          45129 ns        20382 ns        34198
+BM_sendVec_binder/16         45242 ns        20422 ns        34238
+BM_sendVec_binder/32         45088 ns        20432 ns        34307
+BM_sendVec_binder/64         45574 ns        20879 ns        33404
+BM_sendVec_binder/128        46080 ns        21021 ns        33234
+BM_sendVec_binder/256        46584 ns        21447 ns        32618
+BM_sendVec_binder/512        47799 ns        22185 ns        31521
+BM_sendVec_binder/1024       50300 ns        25828 ns        29686
+BM_sendVec_binder/2048       52795 ns        28504 ns        24530
+BM_sendVec_binder/4096       59476 ns        34251 ns        20459
+BM_sendVec_binder/8192       72131 ns        45417 ns        15360
+BM_sendVec_binder/16384      99444 ns        68387 ns        10276
+BM_sendVec_binder/32768     152576 ns       113751 ns         6128
+BM_sendVec_binder/65536     323931 ns       236998 ns         2951
+Saved: ./ctabs_results_1783403460/6b_binder_throughput_payload_sweep.json
+
+=== [7/7] HW-binder throughput tests ===
+
+--- Running: 7a_hwbinder_throughput_multiproc ---
+creating service: hwbinderService0
+creating service: hwbinderService1
+waiting for workers to complete
+iterations per sec: 21573.3
+collecting results
+average:0.0919153ms worst:1.66469ms best:0.022604ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312
+killing services
+killing workers
+Saved: ./ctabs_results_1783403460/7a_hwbinder_throughput_multiproc.json
+
+--- Running: 7b_hwbinder_throughput_payload_sweep ---
+2026-07-01T17:00:30+00:00
+Running /data/local/tmp/libhwbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+---------------------------------------------------------------------
+Benchmark                           Time             CPU   Iterations
+---------------------------------------------------------------------
+BM_sendVec_binderize/4          46307 ns        20702 ns        31263
+BM_sendVec_binderize/8          46367 ns        20702 ns        33842
+BM_sendVec_binderize/16         46313 ns        20727 ns        33795
+BM_sendVec_binderize/32         46393 ns        20692 ns        33855
+BM_sendVec_binderize/64         46113 ns        20679 ns        33801
+BM_sendVec_binderize/128        46336 ns        20685 ns        33708
+BM_sendVec_binderize/256        46269 ns        20715 ns        33823
+BM_sendVec_binderize/512        46433 ns        20715 ns        33811
+BM_sendVec_binderize/1024       46595 ns        20855 ns        33686
+BM_sendVec_binderize/2048       46897 ns        20959 ns        33387
+BM_sendVec_binderize/4096       47570 ns        21216 ns        32982
+BM_sendVec_binderize/8192       48455 ns        21708 ns        32102
+BM_sendVec_binderize/16384      50790 ns        22677 ns        30906
+BM_sendVec_binderize/32768      55058 ns        24819 ns        28395
+BM_sendVec_binderize/65536      63685 ns        28984 ns        24160
+Saved: ./ctabs_results_1783403460/7b_hwbinder_throughput_payload_sweep.json
+
+=== Collecting dmesg + logcat ===
+
+=== DONE ===
+Results in: ./ctabs_results_1783403460
+total 57M
+-rwxrwxrwx 1 neungayay neungayay  890 Jul  7 12:51 1_binder_latency_baseline.json
+-rwxrwxrwx 1 neungayay neungayay 7.8K Jul  7 12:51 2_ctabs_binder_latency_organic.json
+-rwxrwxrwx 1 neungayay neungayay 7.9K Jul  7 12:51 3_ctabs_same_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 7.9K Jul  7 12:51 4_ctabs_cross_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 2.2K Jul  7 12:51 5_hwbinder_latency_baseline.json
+-rwxrwxrwx 1 neungayay neungayay 2.3K Jul  7 12:51 5b_hwbinder_latency_same_cluster.json
+-rwxrwxrwx 1 neungayay neungayay 2.2K Jul  7 12:51 5c_hwbinder_latency_cross_cluster.json
+-rwxrwxrwx 1 neungayay neungayay  256 Jul  7 12:51 6a_binder_throughput_multiproc.json
+-rwxrwxrwx 1 neungayay neungayay 1.2K Jul  7 12:52 6b_binder_throughput_payload_sweep.json
+-rwxrwxrwx 1 neungayay neungayay  300 Jul  7 12:52 7a_hwbinder_throughput_multiproc.json
+-rwxrwxrwx 1 neungayay neungayay 1.3K Jul  7 12:52 7b_hwbinder_throughput_payload_sweep.json
+-rwxrwxrwx 1 neungayay neungayay   41 Jul  7 12:51 cluster_masks.txt
+-rwxrwxrwx 1 neungayay neungayay  38K Jul  7 12:52 dmesg.txt
+-rwxrwxrwx 1 neungayay neungayay  57M Jul  7 12:53 logcat.txt
+-rwxrwxrwx 1 neungayay neungayay  38K Jul  7 12:53 runner.log
+-rwxrwxrwx 1 neungayay neungayay  328 Jul  7 12:51 topology.txt
+
+=== Quick latency summary ===
+  1_binder_latency_baseline => avg_ms=0.16
+  2_ctabs_binder_latency_organic => avg_ms=0.15 (CTABS)
+  3_ctabs_same_cluster => avg_ms=0.16 (CTABS)
+  4_ctabs_cross_cluster => avg_ms=0.14 (CTABS)
+  5_hwbinder_latency_baseline => avg_ms=0.17
+  5b_hwbinder_latency_same_cluster => avg_ms=0.25
+  5c_hwbinder_latency_cross_cluster => avg_ms=0.14
+  6a_binder_throughput_multiproc => avg_ms=0.0413401 (throughput)
+  6b_binder_throughput_payload_sweep => avg_ms=.0450 (benchmark)
+  7a_hwbinder_throughput_multiproc => avg_ms=0.0919153 (throughput)
+  7b_hwbinder_throughput_payload_sweep => avg_ms=.0463 (benchmark)
+
+=== Next steps ===
+  1. Compare baseline vs CTABS avg/p99 for same-cluster and cross-cluster scenarios.
+  2. If PERF was enabled, check *_perf.txt for L1/LLC miss counts.
+  3. If TRACE was enabled, open trace*.pb in Perfetto UI (ui.perfetto.dev)
+     SQL: SELECT ts, name, cpu FROM ftrace WHERE name LIKE 'binder%' ORDER BY ts LIMIT 200;
+  4. Run analyze_ctabs.py (if available) on CSV files for per-tier p50/p90/p99 plots.
