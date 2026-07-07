@@ -1,0 +1,300 @@
+diff --git a/libs/binder/tests/schd-dbg.cpp b/libs/binder/tests/schd-dbg.cpp
+index d3cd528e26..4f6365840a 100644
+--- a/libs/binder/tests/schd-dbg.cpp
++++ b/libs/binder/tests/schd-dbg.cpp
+@@ -14,12 +14,70 @@
+ 
+ #include <pthread.h>
+ #include <sys/wait.h>
++#include <sched.h>
+ #include <unistd.h>
+ #include <fstream>
+ 
+ using namespace std;
+ using namespace android;
+ 
++/* ---- CPU Topology Discovery ------------------------------------------- */
++
++struct CpuTopologyInfo {
++    int cluster_id;     /* -1 if unknown */
++    int core_id;        /* -1 if unknown */
++    bool valid;
++};
++
++static CpuTopologyInfo g_topology[CPU_SETSIZE];
++static int g_nr_cpus;
++
++static int read_sysfs_int(const char *fmt, int cpu) {
++    char path[256];
++    snprintf(path, sizeof(path), fmt, cpu);
++    ifstream f(path);
++    int val = -1;
++    f >> val;
++    return val;
++}
++
++static void init_topology() {
++    g_nr_cpus = min((int)sysconf(_SC_NPROCESSORS_CONF), CPU_SETSIZE);
++    for (int cpu = 0; cpu < g_nr_cpus; cpu++) {
++        g_topology[cpu].core_id = read_sysfs_int(
++            "/sys/devices/system/cpu/cpu%d/topology/core_id", cpu);
++        g_topology[cpu].cluster_id = read_sysfs_int(
++            "/sys/devices/system/cpu/cpu%d/topology/cluster_id", cpu);
++        g_topology[cpu].valid = (g_topology[cpu].core_id >= 0);
++    }
++}
++
++enum TopoTier : uint8_t {
++    TIER_UNKNOWN        = 0,
++    TIER_SAME_CORE,         /* same physical core */
++    TIER_SAME_CLUSTER,      /* same L2 cluster, different core */
++    TIER_CROSS_CLUSTER,     /* different cluster / package */
++    TIER_COUNT
++};
++
++static const char *TIER_NAME[] = {
++    "unknown", "same_core", "same_cluster", "cross_cluster",
++};
++
++static TopoTier classify_tier(int cpu_a, int cpu_b) {
++    if (cpu_a < 0 || cpu_b < 0 || cpu_a >= g_nr_cpus || cpu_b >= g_nr_cpus)
++        return TIER_UNKNOWN;
++    if (cpu_a == cpu_b)
++        return TIER_SAME_CORE;
++    if (g_topology[cpu_a].cluster_id >= 0 &&
++        g_topology[cpu_b].cluster_id >= 0 &&
++        g_topology[cpu_a].cluster_id == g_topology[cpu_b].cluster_id)
++        return TIER_SAME_CLUSTER;
++    return TIER_CROSS_CLUSTER;
++}
++
++/* ---- end CPU Topology ------------------------------------------------ */
++
+ enum BinderWorkerServiceCode {
+   BINDER_NOP = IBinder::FIRST_CALL_TRANSACTION,
+ };
+@@ -123,7 +181,9 @@ class BinderWorkerService : public BBinder {
+         thread_dump("binder");
+         int priority = thread_pri();
+         int priority_caller = data.readInt32();
++        int cpu_caller = data.readInt32();    // Always read for CTABS tiering
+         int h = 0, s = 0;
++        int my_cpu = sched_getcpu();
+         if (priority_caller != priority) {
+           h++;
+           if (verbose) {
+@@ -132,14 +192,13 @@ class BinderWorkerService : public BBinder {
+           }
+         }
+         if (priority == sched_get_priority_max(SCHED_FIFO)) {
+-          int cpu = sched_getcpu();
+-          int cpu_caller = data.readInt32();
+-          if (cpu != cpu_caller) {
++          if (my_cpu != cpu_caller) {
+             s++;
+           }
+         }
+         reply->writeInt32(h);
+         reply->writeInt32(s);
++        reply->writeInt32(my_cpu);            // Server CPU for tier classification
+         return NO_ERROR;
+       }
+       default:
+@@ -255,6 +314,38 @@ struct Results {
+   }
+ };
+ 
++/* ---- TieredStats: per-topology-tier latency tracking ---- */
++
++struct TieredStats {
++    Results tier[TIER_COUNT];             /* one Results per TopoTier */
++    uint64_t count_by_tier[TIER_COUNT] = {0};
++
++    void add_time(uint64_t nano, TopoTier t) {
++        if (t < TIER_COUNT) {
++            tier[t].add_time(nano);
++            count_by_tier[t]++;
++        }
++    }
++
++    void dump_tier(const char *label, int idx) const {
++        cout << "    \"" << label << "\":";
++        tier[idx].dump();
++        cout << ",\"" << label << "_n\":" << count_by_tier[idx];
++    }
++
++    void dump(const char *prefix) const {
++        cout << "  \"" << prefix << "\": {" << endl;
++        for (int i = 0; i < TIER_COUNT; i++) {
++            dump_tier(TIER_NAME[i], i);
++            if (i < TIER_COUNT - 1) cout << ",";
++            cout << endl;
++        }
++        cout << "  }," << endl;
++    }
++};
++
++/* ---- end TieredStats ------------------------------------------------ */
++
+ String16 generateServiceName(int num) {
+   char num_str[32];
+   snprintf(num_str, sizeof(num_str), "%d", num);
+@@ -274,40 +365,48 @@ static void parcel_fill(Parcel& data, int sz, int priority, int cpu) {
+ }
+ 
+ typedef struct {
+-  void* result;
++  TieredStats* stats;    /* was Results*; now per-tier tracking */
+   int target;
+ } thread_priv_t;
+ 
+ static void* thread_start(void* p) {
+   thread_priv_t* priv = (thread_priv_t*)p;
+   int target = priv->target;
+-  Results* results_fifo = (Results*)priv->result;
++  TieredStats* stats_fifo = priv->stats;
+   Parcel data, reply;
+   Tick sta, end;
+ 
+-  parcel_fill(data, payload_size, thread_pri(), sched_getcpu());
++  int caller_cpu = sched_getcpu();      // Capture before transaction
++  parcel_fill(data, payload_size, thread_pri(), caller_cpu);
+   thread_dump("fifo-caller");
+ 
+   sta = tickNow();
+   status_t ret = workers[target]->transact(BINDER_NOP, data, &reply);
+   ASSERT(ret == NO_ERROR);
+   end = tickNow();
+-  results_fifo->add_time(tickNano(sta, end));
++  uint64_t lat_ns = tickNano(sta, end);
++
++  int h = reply.readInt32();
++  int s = reply.readInt32();
++  int server_cpu = reply.readInt32();    // Server's actual CPU
++
++  TopoTier tier = classify_tier(caller_cpu, server_cpu);
++  stats_fifo->add_time(lat_ns, tier);
+ 
+-  no_inherent += reply.readInt32();
+-  no_sync += reply.readInt32();
++  no_inherent += h;
++  no_sync += s;
+   return nullptr;
+ }
+ 
+ // create a fifo thread to transact and wait it to finished
+-static void thread_transaction(int target, Results* results_fifo) {
++static void thread_transaction(int target, TieredStats* stats_fifo) {
+   thread_priv_t thread_priv;
+   void* dummy;
+   pthread_t thread;
+   pthread_attr_t attr;
+   struct sched_param param;
+   thread_priv.target = target;
+-  thread_priv.result = results_fifo;
++  thread_priv.stats = stats_fifo;
+   ASSERT(!pthread_attr_init(&attr));
+   ASSERT(!pthread_attr_setschedpolicy(&attr, SCHED_FIFO));
+   param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+@@ -321,7 +420,7 @@ static void thread_transaction(int target, Results* results_fifo) {
+ void worker_fx(int num, int no_process, int iterations, int payload_size,
+                Pipe p) {
+   int dummy;
+-  Results results_other(false), results_fifo(trace);
++  TieredStats stats_other, stats_fifo;
+ 
+   // Create BinderWorkerService and for go.
+   ProcessState::self()->startThreadPool();
+@@ -354,19 +453,28 @@ void worker_fx(int num, int no_process, int iterations, int payload_size,
+     // the target is paired to make it easier to diagnose
+     int target = num % server_count;
+ 
+-    // 1. transaction by fifo thread
+-    thread_transaction(target, &results_fifo);
+-    parcel_fill(data, payload_size, thread_pri(), sched_getcpu());
++    // 1. FIFO thread transaction
++    thread_transaction(target, &stats_fifo);
++
++    int caller_cpu = sched_getcpu();    // For tier classification
++    parcel_fill(data, payload_size, thread_pri(), caller_cpu);
+     thread_dump("other-caller");
+ 
+-    // 2. transaction by other thread
++    // 2. OTHER thread transaction
+     sta = tickNow();
+     ASSERT(NO_ERROR == workers[target]->transact(BINDER_NOP, data, &reply));
+     end = tickNow();
+-    results_other.add_time(tickNano(sta, end));
++    uint64_t lat_ns = tickNano(sta, end);
++
++    int h = reply.readInt32();
++    int s = reply.readInt32();
++    int server_cpu = reply.readInt32();  // Server's actual CPU
++
++    TopoTier tier = classify_tier(caller_cpu, server_cpu);
++    stats_other.add_time(lat_ns, tier);
+ 
+-    no_inherent += reply.readInt32();
+-    no_sync += reply.readInt32();
++    no_inherent += h;
++    no_sync += s;
+   }
+   // Signal completion to master and wait.
+   p.signal();
+@@ -385,12 +493,8 @@ void worker_fx(int num, int no_process, int iterations, int payload_size,
+          << "\"S\":" << (no_trans - no_sync) << ",\"I\":" << no_trans << ","
+          << "\"R\":" << sync_ratio << "," << endl;
+ 
+-    cout << "  \"other_ms\":";
+-    results_other.dump();
+-    cout << "," << endl;
+-    cout << "  \"fifo_ms\": ";
+-    results_fifo.dump();
+-    cout << endl;
++    stats_fifo.dump("fifo_tiered");
++    stats_other.dump("other_tiered");
+     cout << "}," << endl;
+   }
+   exit(no_inherent);
+@@ -423,9 +527,27 @@ void signal_all(vector<Pipe>& v) {
+   }
+ }
+ 
++/* Dump discovered CPU topology as JSON */
++static void dump_topology() {
++    cout << "\"topology\": {" << endl;
++    cout << "  \"nr_cpus\": " << g_nr_cpus << "," << endl;
++    cout << "  \"cpus\": [";
++    for (int cpu = 0; cpu < g_nr_cpus; cpu++) {
++        if (cpu > 0) cout << ",";
++        cout << endl;
++        cout << "    {\"cpu\":" << cpu
++             << ",\"core\":" << g_topology[cpu].core_id
++             << ",\"cluster\":" << g_topology[cpu].cluster_id
++             << "}";
++    }
++    cout << endl << "  ]" << endl;
++    cout << "}," << endl;
++}
++
+ // This test is modified from binderThroughputTest.cpp
+ int main(int argc, char** argv) {
+-  for (int i = 1; i < argc; i++) {
++  init_topology();
++
+     if (string(argv[i]) == "-i") {
+       iterations = atoi(argv[i + 1]);
+       i++;
+@@ -471,9 +593,12 @@ int main(int argc, char** argv) {
+   // TODO: libjson?
+   cout << "{" << endl;
+   cout << "\"cfg\":{\"pair\":" << (no_process / 2)
++       << ",\"nr_cpus\":" << g_nr_cpus
+        << ",\"iterations\":" << iterations << ",\"deadline_us\":" << deadline_us
+        << "}," << endl;
+ 
++  dump_topology();
++
+   // the main process fork 2 processes for each pairs
+   // 1 server + 1 client
+   // each has a pipe to communicate with
