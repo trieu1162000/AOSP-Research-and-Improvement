@@ -1,0 +1,20 @@
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500},
+"P0":{"SYNC":"GOOD","S":20000,"I":20000,"R":1,
+  "other_ms":{ "avg":0.17,"wst":3.5 ,"bst":0.043,"miss":4,"meetR":0.9996},
+  "fifo_ms": { "avg":0.14,"wst":2.6 ,"bst":0.048,"miss":1,"meetR":0.9999}
+},
+"P1":{"SYNC":"GOOD","S":20000,"I":20000,"R":1,
+  "other_ms":{ "avg":0.17,"wst":9.5 ,"bst":0.044,"miss":4,"meetR":0.9996},
+  "fifo_ms": { "avg":0.14,"wst":2.3 ,"bst":0.048,"miss":0,"meetR":1}
+},
+"P2":{"SYNC":"GOOD","S":20000,"I":20000,"R":1,
+  "other_ms":{ "avg":0.17,"wst":2.7 ,"bst":0.044,"miss":1,"meetR":0.9999},
+  "fifo_ms": { "avg":0.14,"wst":2.8 ,"bst":0.049,"miss":1,"meetR":0.9999}
+},
+"P3":{"SYNC":"GOOD","S":20000,"I":20000,"R":1,
+  "other_ms":{ "avg":0.17,"wst":9.2 ,"bst":0.044,"miss":6,"meetR":0.9994},
+  "fifo_ms": { "avg":0.14,"wst":2.7 ,"bst":0.049,"miss":1,"meetR":0.9999}
+},
+"inheritance": "FAIL"
+}
