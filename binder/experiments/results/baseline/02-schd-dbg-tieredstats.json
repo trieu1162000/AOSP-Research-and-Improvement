@@ -1,25 +1,4 @@
 {
-"cfg":{"pair":4,"iterations":10000,"deadline_us":2500},
-"P0":{"SYNC":"GOOD","S":19870,"I":20000,"R":0.9935,
-  "other_ms":{ "avg":0.18,"wst":6.2 ,"bst":0.043,"miss":5,"meetR":0.9995},
-  "fifo_ms": { "avg":0.096,"wst":0.41,"bst":0.051,"miss":0,"meetR":1}
-},
-"P1":{"SYNC":"GOOD","S":19869,"I":20000,"R":0.99345,
-  "other_ms":{ "avg":0.18,"wst":6.6 ,"bst":0.043,"miss":3,"meetR":0.9997},
-  "fifo_ms": { "avg":0.097,"wst":0.53,"bst":0.051,"miss":0,"meetR":1}
-},
-"P2":{"SYNC":"GOOD","S":19875,"I":20000,"R":0.99375,
-  "other_ms":{ "avg":0.18,"wst":4.3 ,"bst":0.043,"miss":6,"meetR":0.9994},
-  "fifo_ms": { "avg":0.096,"wst":0.5 ,"bst":0.051,"miss":0,"meetR":1}
-},
-"P3":{"SYNC":"GOOD","S":19884,"I":20000,"R":0.9942,
-  "other_ms":{ "avg":0.18,"wst":3.5 ,"bst":0.043,"miss":5,"meetR":0.9995},
-  "fifo_ms": { "avg":0.096,"wst":0.53,"bst":0.051,"miss":0,"meetR":1}
-},
-"inheritance": "PASS"
-}
-
-{
 "cfg":{"pair":4,"nr_cpus":8,"iterations":10000,"deadline_us":2500},
 "topology": {
   "nr_cpus": 8,
