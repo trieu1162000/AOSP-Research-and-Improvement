@@ -1,0 +1,348 @@
+=== CTABS Validation Runner: Sat Jul 11 00:23:29 KST 2026 ===
+ITER=10000 PAIR=4 PAYLOAD=16 PUSH=0 PERF=0 TRACE=0 OUT=./ctabs_results_1783697009
+=== Setting CPU governor to performance ===
+restarting adbd as root
+=== CPU Topology ===
+cpu0: core=0 cluster=0 max_freq=1785600
+cpu1: core=1 cluster=0 max_freq=1785600
+cpu2: core=2 cluster=0 max_freq=1785600
+cpu3: core=3 cluster=0 max_freq=1785600
+cpu4: core=0 cluster=1 max_freq=2131200
+cpu5: core=1 cluster=1 max_freq=2131200
+cpu6: core=2 cluster=1 max_freq=2131200
+cpu7: core=0 cluster=2 max_freq=2419200
+=== Computing cluster CPU masks ===
+Cluster masks: [cluster0=0xf cluster1=0x70 cluster2=0x80]
+
+=== [1/7] Binder latency — baseline schd-dbg (standard VTS) ===
+
+--- Running: 1_binder_latency_baseline ---
+{
+"cfg":{"pair":4,"nr_cpus":8,"iterations":10000,"deadline_us":2500,"payload_size":16},
+"topology": {
+  "nr_cpus": 8,
+  "cpus": [
+    {"cpu":0,"core":0,"cluster":0},
+    {"cpu":1,"core":1,"cluster":0},
+    {"cpu":2,"core":2,"cluster":0},
+    {"cpu":3,"core":3,"cluster":0},
+    {"cpu":4,"core":0,"cluster":1},
+    {"cpu":5,"core":1,"cluster":1},
+    {"cpu":6,"core":2,"cluster":1},
+    {"cpu":7,"core":0,"cluster":2}
+  ]
+},
+"P0":{"SYNC":"GOOD","S":19968,"I":20000,"R":0.9984,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.1 ,"wst":0.75,"bst":0.045,"miss":0,"meetR":1},"same_core_n":9968,
+    "same_cluster":{ "avg":0.14,"wst":0.16,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":4,
+    "cross_cluster":{ "avg":0.2 ,"wst":0.29,"bst":0.14,"miss":0,"meetR":1},"cross_cluster_n":28,
+    "total":{ "avg":0.1 ,"wst":0.75,"bst":0.045,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.12,"wst":6.8 ,"bst":0.039,"miss":11,"meetR":0.99837},"same_core_n":6755,
+    "same_cluster":{ "avg":0.31,"wst":18  ,"bst":0.064,"miss":6,"meetR":0.99549},"same_cluster_n":1330,
+    "cross_cluster":{ "avg":0.32,"wst":7   ,"bst":0.076,"miss":15,"meetR":0.99217},"cross_cluster_n":1915,
+    "total":{ "avg":0.18,"wst":18  ,"bst":0.039,"miss":32,"meetR":0.9968}
+  }
+},
+"P1":{"SYNC":"GOOD","S":19970,"I":20000,"R":0.9985,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.1 ,"wst":1.2 ,"bst":0.045,"miss":0,"meetR":1},"same_core_n":9970,
+    "same_cluster":{ "avg":0.19,"wst":0.29,"bst":0.14,"miss":0,"meetR":1},"same_cluster_n":10,
+    "cross_cluster":{ "avg":0.2 ,"wst":0.29,"bst":0.14,"miss":0,"meetR":1},"cross_cluster_n":20,
+    "total":{ "avg":0.1 ,"wst":1.2 ,"bst":0.045,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.12,"wst":4.1 ,"bst":0.037,"miss":11,"meetR":0.99835},"same_core_n":6648,
+    "same_cluster":{ "avg":0.29,"wst":5.5 ,"bst":0.069,"miss":9,"meetR":0.99348},"same_cluster_n":1380,
+    "cross_cluster":{ "avg":0.31,"wst":7.2 ,"bst":0.074,"miss":9,"meetR":0.99544},"cross_cluster_n":1972,
+    "total":{ "avg":0.18,"wst":7.2 ,"bst":0.037,"miss":29,"meetR":0.9971}
+  }
+},
+"P2":{"SYNC":"GOOD","S":19970,"I":20000,"R":0.9985,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.1 ,"wst":0.65,"bst":0.045,"miss":0,"meetR":1},"same_core_n":9970,
+    "same_cluster":{ "avg":0.18,"wst":0.26,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":8,
+    "cross_cluster":{ "avg":0.18,"wst":0.25,"bst":0.12,"miss":0,"meetR":1},"cross_cluster_n":22,
+    "total":{ "avg":0.1 ,"wst":0.65,"bst":0.045,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.13,"wst":13  ,"bst":0.04,"miss":12,"meetR":0.99821},"same_core_n":6700,
+    "same_cluster":{ "avg":0.31,"wst":7.3 ,"bst":0.062,"miss":9,"meetR":0.9937},"same_cluster_n":1429,
+    "cross_cluster":{ "avg":0.31,"wst":5.6 ,"bst":0.072,"miss":7,"meetR":0.99626},"cross_cluster_n":1871,
+    "total":{ "avg":0.18,"wst":13  ,"bst":0.04,"miss":28,"meetR":0.9972}
+  }
+},
+"P3":{"SYNC":"GOOD","S":19973,"I":20000,"R":0.99865,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.1 ,"wst":0.66,"bst":0.046,"miss":0,"meetR":1},"same_core_n":9973,
+    "same_cluster":{ "avg":0.17,"wst":0.27,"bst":0.1 ,"miss":0,"meetR":1},"same_cluster_n":9,
+    "cross_cluster":{ "avg":0.2 ,"wst":0.31,"bst":0.12,"miss":0,"meetR":1},"cross_cluster_n":18,
+    "total":{ "avg":0.1 ,"wst":0.66,"bst":0.046,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.11,"wst":8.8 ,"bst":0.043,"miss":9,"meetR":0.99863},"same_core_n":6592,
+    "same_cluster":{ "avg":0.3 ,"wst":8.4 ,"bst":0.065,"miss":7,"meetR":0.99503},"same_cluster_n":1408,
+    "cross_cluster":{ "avg":0.31,"wst":6.2 ,"bst":0.071,"miss":11,"meetR":0.9945},"cross_cluster_n":2000,
+    "total":{ "avg":0.18,"wst":8.8 ,"bst":0.043,"miss":27,"meetR":0.9973}
+  }
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783697009/1_binder_latency_baseline.json
+
+=== [5/7] HW-binder latency — standard VTS ===
+
+--- Running: 5_hwbinder_latency_baseline ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":55496,"I":80000,"R":0.6937,
+  "other_ms":{ "avg":0.24, "wst":27  , "bst":0.043, "miss":173, "meetR":0.99567},
+  "fifo_ms": { "avg":0.11, "wst":8.7 , "bst":0.049, "miss":1, "meetR":0.99997},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.7578},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P0":{"SYNC":"GOOD","S":13856,"I":20000,"R":0.6928,
+  "other_ms":{ "avg":0.24, "wst":9.6 , "bst":0.043, "miss":37, "meetR":0.9963},
+  "fifo_ms": { "avg":0.11, "wst":8.7 , "bst":0.05, "miss":1, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P1":{"SYNC":"GOOD","S":13824,"I":20000,"R":0.6912,
+  "other_ms":{ "avg":0.24, "wst":27  , "bst":0.045, "miss":49, "meetR":0.9951},
+  "fifo_ms": { "avg":0.11, "wst":0.96, "bst":0.051, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.7578},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P2":{"SYNC":"GOOD","S":13774,"I":20000,"R":0.6887,
+  "other_ms":{ "avg":0.24, "wst":15  , "bst":0.047, "miss":35, "meetR":0.9965},
+  "fifo_ms": { "avg":0.11, "wst":0.78, "bst":0.05, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"P3":{"SYNC":"GOOD","S":14042,"I":20000,"R":0.7021,
+  "other_ms":{ "avg":0.24, "wst":8.5 , "bst":0.044, "miss":52, "meetR":0.9948},
+  "fifo_ms": { "avg":0.11, "wst":2.1 , "bst":0.049, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.7578},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.19531}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783697009/5_hwbinder_latency_baseline.json
+
+    [5b] HW-binder latency — same-cluster (0xf) ===
+
+--- Running: 5b_hwbinder_latency_same_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"GOOD","S":57766,"I":80000,"R":0.722075,
+  "other_ms":{ "avg":0.26, "wst":11  , "bst":0.071, "miss":147, "meetR":0.99633},
+  "fifo_ms": { "avg":0.14, "wst":2.8 , "bst":0.087, "miss":1, "meetR":0.99997},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P0":{"SYNC":"GOOD","S":14440,"I":20000,"R":0.722,
+  "other_ms":{ "avg":0.25, "wst":7.1 , "bst":0.071, "miss":22, "meetR":0.9978},
+  "fifo_ms": { "avg":0.14, "wst":0.85, "bst":0.091, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P1":{"SYNC":"GOOD","S":14492,"I":20000,"R":0.7246,
+  "other_ms":{ "avg":0.26, "wst":8.2 , "bst":0.074, "miss":47, "meetR":0.9953},
+  "fifo_ms": { "avg":0.14, "wst":2.8 , "bst":0.094, "miss":1, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P2":{"SYNC":"GOOD","S":14477,"I":20000,"R":0.72385,
+  "other_ms":{ "avg":0.25, "wst":11  , "bst":0.074, "miss":35, "meetR":0.9965},
+  "fifo_ms": { "avg":0.14, "wst":0.83, "bst":0.094, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P3":{"SYNC":"GOOD","S":14357,"I":20000,"R":0.71785,
+  "other_ms":{ "avg":0.26, "wst":9.9 , "bst":0.075, "miss":43, "meetR":0.9957},
+  "fifo_ms": { "avg":0.14, "wst":1.8 , "bst":0.087, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.58594, "p95":0.58594, "p99": 1.3672},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783697009/5b_hwbinder_latency_same_cluster.json
+
+    [5c] HW-binder latency — cross-cluster servers=0xf clients=0x70 ===
+
+--- Running: 5c_hwbinder_latency_cross_cluster ---
+{
+"cfg":{"pair":4,"iterations":10000,"deadline_us":2500,"passthrough":0,"pin_servers":"0xf","pin_clients":"0x70"},
+"topology":{"nr_cpus":8,"cpus":[{"cpu":0,"core":0,"cluster":0},{"cpu":1,"core":1,"cluster":0},{"cpu":2,"core":2,"cluster":0},{"cpu":3,"core":3,"cluster":0},{"cpu":4,"core":0,"cluster":1},{"cpu":5,"core":1,"cluster":1},{"cpu":6,"core":2,"cluster":1},{"cpu":7,"core":0,"cluster":2}]},
+"ALL":{"SYNC":"POOR","S":0,"I":80000,"R":0,
+  "other_ms":{ "avg":0.18, "wst":5.6 , "bst":0.06, "miss":41, "meetR":0.99897},
+  "fifo_ms": { "avg":0.14, "wst":2.9 , "bst":0.07, "miss":4, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.58594, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P0":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.18, "wst":3.4 , "bst":0.066, "miss":15, "meetR":0.9985},
+  "fifo_ms": { "avg":0.14, "wst":2.7 , "bst":0.071, "miss":1, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.58594, "p99": 0.97656},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P1":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.18, "wst":3   , "bst":0.062, "miss":5, "meetR":0.9995},
+  "fifo_ms": { "avg":0.14, "wst":0.7 , "bst":0.072, "miss":0, "meetR":1},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.58594, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P2":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.18, "wst":3.5 , "bst":0.06, "miss":10, "meetR":0.999},
+  "fifo_ms": { "avg":0.14, "wst":2.7 , "bst":0.073, "miss":1, "meetR":0.9999},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.58594, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"P3":{"SYNC":"POOR","S":0,"I":20000,"R":0,
+  "other_ms":{ "avg":0.18, "wst":5.6 , "bst":0.063, "miss":11, "meetR":0.9989},
+  "fifo_ms": { "avg":0.14, "wst":2.9 , "bst":0.07, "miss":2, "meetR":0.9998},
+  "otherdis":{ "p50":0.19531, "p90":0.19531, "p95":0.58594, "p99": 0.58594},
+  "fifodis": { "p50":0.19531, "p90":0.19531, "p95":0.19531, "p99": 0.58594}
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_1783697009/5c_hwbinder_latency_cross_cluster.json
+
+=== [6/7] Binder throughput tests ===
+
+--- Running: 6a_binder_throughput_multiproc ---
+waiting for workers to complete
+Created BinderWorker0
+Created BinderWorker1
+iterations per sec: 39862.7
+collecting results
+killing workers
+average:0.0434329ms worst:1.09787ms best:0.028438ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312 
+Saved: ./ctabs_results_1783697009/6a_binder_throughput_multiproc.json
+
+--- Running: 6b_binder_throughput_payload_sweep ---
+2026-06-25T18:38:30+00:00
+Running /data/local/tmp/libbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
+------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations
+------------------------------------------------------------------
+BM_sendVec_binder/4          55758 ns        26253 ns        29668
+BM_sendVec_binder/8          49333 ns        22183 ns        27313
+BM_sendVec_binder/16         48063 ns        21610 ns        32217
+BM_sendVec_binder/32         48618 ns        21833 ns        32143
+BM_sendVec_binder/64         48979 ns        22210 ns        31701
+BM_sendVec_binder/128        50190 ns        22508 ns        31380
+BM_sendVec_binder/256        53519 ns        26667 ns        26576
+BM_sendVec_binder/512        56097 ns        27141 ns        25418
+BM_sendVec_binder/1024       57506 ns        28644 ns        24187
+BM_sendVec_binder/2048       55541 ns        29774 ns        23209
+BM_sendVec_binder/4096       62774 ns        35789 ns        19577
+BM_sendVec_binder/8192       78494 ns        48310 ns        14635
+BM_sendVec_binder/16384     102662 ns        69985 ns         9715
+BM_sendVec_binder/32768     157683 ns       116574 ns         6021
+BM_sendVec_binder/65536     333298 ns       240921 ns         2895
+Saved: ./ctabs_results_1783697009/6b_binder_throughput_payload_sweep.json
+
+=== [7/7] HW-binder throughput tests ===
+
+--- Running: 7a_hwbinder_throughput_multiproc ---
+creating service: hwbinderService0
+creating service: hwbinderService1
+waiting for workers to complete
+iterations per sec: 19031
+collecting results
+average:0.103118ms worst:2.5201ms best:0.025208ms
+50%: 0.195312 90%: 0.195312 95%: 0.195312 99%: 0.195312 
+killing services
+killing workers
+Saved: ./ctabs_results_1783697009/7a_hwbinder_throughput_multiproc.json
+
+--- Running: 7b_hwbinder_throughput_payload_sweep ---
+2026-06-25T18:39:01+00:00
+Running /data/local/tmp/libhwbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
+---------------------------------------------------------------------
+Benchmark                           Time             CPU   Iterations
+---------------------------------------------------------------------
+BM_sendVec_binderize/4          50198 ns        22415 ns        31546
+BM_sendVec_binderize/8          50332 ns        22446 ns        31214
+BM_sendVec_binderize/16         49999 ns        22206 ns        31312
+BM_sendVec_binderize/32         50649 ns        22385 ns        31298
+BM_sendVec_binderize/64         50177 ns        22366 ns        30795
+BM_sendVec_binderize/128        50479 ns        22502 ns        31308
+BM_sendVec_binderize/256        50216 ns        22331 ns        31050
+BM_sendVec_binderize/512        49868 ns        22228 ns        31635
+BM_sendVec_binderize/1024       50632 ns        22558 ns        30924
+BM_sendVec_binderize/2048       50329 ns        22364 ns        30548
+BM_sendVec_binderize/4096       51587 ns        22876 ns        30641
+BM_sendVec_binderize/8192       52433 ns        23305 ns        29662
+BM_sendVec_binderize/16384      56352 ns        26024 ns        28188
+BM_sendVec_binderize/32768      59125 ns        26264 ns        26514
+BM_sendVec_binderize/65536      67809 ns        30775 ns        22639
+Saved: ./ctabs_results_1783697009/7b_hwbinder_throughput_payload_sweep.json
+
+=== Collecting dmesg + logcat ===
+
+=== DONE ===
+Results in: ./ctabs_results_1783697009
+total 16M
+-rw-r--r-- 1 worker worker 4.4K Jul 11 00:23 1_binder_latency_baseline.json
+-rw-r--r-- 1 worker worker 2.2K Jul 11 00:23 5b_hwbinder_latency_same_cluster.json
+-rw-r--r-- 1 worker worker 2.2K Jul 11 00:24 5c_hwbinder_latency_cross_cluster.json
+-rw-r--r-- 1 worker worker 2.2K Jul 11 00:23 5_hwbinder_latency_baseline.json
+-rw-r--r-- 1 worker worker  248 Jul 11 00:24 6a_binder_throughput_multiproc.json
+-rw-r--r-- 1 worker worker 1.2K Jul 11 00:24 6b_binder_throughput_payload_sweep.json
+-rw-r--r-- 1 worker worker  287 Jul 11 00:24 7a_hwbinder_throughput_multiproc.json
+-rw-r--r-- 1 worker worker 1.3K Jul 11 00:25 7b_hwbinder_throughput_payload_sweep.json
+-rw-r--r-- 1 worker worker   41 Jul 11 00:23 cluster_masks.txt
+-rw-r--r-- 1 worker worker  39K Jul 11 00:25 dmesg.txt
+-rw-r--r-- 1 worker worker  16M Jul 11 00:25 logcat.txt
+-rw-r--r-- 1 worker worker  17K Jul 11 00:25 runner.log
+-rw-r--r-- 1 worker worker  320 Jul 11 00:23 topology.txt
+
+=== Quick latency summary ===
+  1_binder_latency_baseline => avg_ms=N/A (unrecognized format)
+  5b_hwbinder_latency_same_cluster => avg_ms=0.256
+  5c_hwbinder_latency_cross_cluster => avg_ms=0.18
+  5_hwbinder_latency_baseline => avg_ms=0.24
+  6a_binder_throughput_multiproc => avg_ms=0.0434329 (throughput)
+  6b_binder_throughput_payload_sweep => avg_ms=.0557 (benchmark)
+  7a_hwbinder_throughput_multiproc => avg_ms=0.103118 (throughput)
+  7b_hwbinder_throughput_payload_sweep => avg_ms=.0501 (benchmark)
+
+=== Next steps ===
+  1. Compare baseline vs CTABS avg/p99 for same-cluster and cross-cluster scenarios.
+  2. If PERF was enabled, check *_perf.txt for L1/LLC miss counts.
+  3. If TRACE was enabled, open trace*.pb in Perfetto UI (ui.perfetto.dev)
+     SQL: SELECT ts, name, cpu FROM ftrace WHERE name LIKE 'binder%' ORDER BY ts LIMIT 200;
+  4. Run analyze_ctabs.py (if available) on CSV files for per-tier p50/p90/p99 plots.
