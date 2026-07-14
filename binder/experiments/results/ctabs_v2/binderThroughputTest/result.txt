@@ -1,0 +1,77 @@
+# 1: cpu-migrations, context-switches
+aivi2_r_full_egg:/data/local/tmp # simpleperf stat \
+> -e cpu-migrations,context-switches \
+> ./binderThroughputTest -w 8 -i 100000
+Created BinderWorker0
+Created BinderWorker1
+Created BinderWorker3
+Created BinderWorker4
+Created BinderWorker5
+Created BinderWorker7
+Created BinderWorker6
+Created BinderWorker2
+waiting for workers to complete
+iterations per sec: 46185
+collecting results
+killing workers
+average:0.143675ms worst:27.2753ms best:0.033802ms
+50%: 0.115364 90%: 0.279636 95%: 0.354115 99%: 0.559375
+
+Performance counter statistics:
+# count    event_name          # count / runtime
+  739,576  cpu-migrations      # 8.750 K/sec
+1,692,450  context-switches    # 20.023 K/sec
+
+Total test time: 17.434538 seconds.
+
+# 2: cpu-cycles, instructions
+aivi2_r_full_egg:/data/local/tmp # simpleperf stat \
+> -e cpu-cycles,instructions \
+> ./binderThroughputTest -w 8 -i 100000
+Created BinderWorker0
+Created BinderWorker3
+Created BinderWorker1
+Created BinderWorker4
+Created BinderWorker5
+Created BinderWorker6
+Created BinderWorker7
+Created BinderWorker2
+waiting for workers to complete
+iterations per sec: 45953.3
+collecting results
+killing workers
+average:0.145706ms worst:33.6039ms best:0.033646ms
+50%: 0.118125 90%: 0.281562 95%: 0.355 99%: 0.561979
+
+Performance counter statistics:
+# count            event_name      # count / runtime
+128,939,774,161    cpu-cycles      # 1.519049 GHz
+ 44,161,362,312    instructions    # 520.268 M/sec
+
+Total test time: 17.510106 seconds.
+
+# 3: cache-references, cache-misses
+aivi2_r_full_egg:/data/local/tmp # simpleperf stat \
+> -e cache-references,cache-misses \
+> ./binderThroughputTest -w 8 -i 100000
+Created BinderWorker0
+Created BinderWorker4
+Created BinderWorker1
+Created BinderWorker3
+Created BinderWorker6
+Created BinderWorker7
+Created BinderWorker2
+Created BinderWorker5
+waiting for workers to complete
+iterations per sec: 46398.9
+collecting results
+killing workers
+average:0.144687ms worst:26.9004ms best:0.034531ms
+50%: 0.117344 90%: 0.280573 95%: 0.352969 99%: 0.554115
+
+Performance counter statistics:
+# count            event_name          # count / runtime
+ 21,243,584,905    cache-references    # 249.939 M/sec
+    948,896,942    cache-misses        # 11.164 M/sec
+
+Total test time: 17.351265 seconds.
