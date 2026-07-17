@@ -182,15 +182,30 @@ adb shell "for cpu in \$(ls /sys/devices/system/cpu/ | grep '^cpu[0-9]'); do
 done" | tee "$TOPO_FILE"
 
 # ------------------------------------------------------------------ #
-# Benchmark 1: schd-dbg-ctabs — latency by topology tier              #
+# Benchmark 1: schd-dbg — latency by topology tier                    #
+#             3 concurrency levels: 1 / 4 / 8 pairs                  #
 # ------------------------------------------------------------------ #
 echo ""
 echo "================================================================"
-echo "[1/3] schd-dbg-ctabs — latency by topology tier"
-echo "      concurrency=1, ${ITER} iterations, 16B payload"
+echo "[1/3] schd-dbg — latency by topology tier (pair=1)"
+echo "      ${ITER} iterations, 16B payload"
 echo "================================================================"
-run_adb "01_schd_dbg_tiered" \
+run_adb "01a_schd_dbg_pair1" \
     "$BIN_CTABS -i $ITER -pair 1 -payload 16"
+echo ""
+echo "================================================================"
+echo "[1/3] schd-dbg — latency by topology tier (pair=4)"
+echo "      ${ITER} iterations, 16B payload"
+echo "================================================================"
+run_adb "01b_schd_dbg_pair4" \
+    "$BIN_CTABS -i $ITER -pair 4 -payload 16"
+echo ""
+echo "================================================================"
+echo "[1/3] schd-dbg — latency by topology tier (pair=8)"
+echo "      ${ITER} iterations, 16B payload"
+echo "================================================================"
+run_adb "01c_schd_dbg_pair8" \
+    "$BIN_CTABS -i $ITER -pair 8 -payload 16"
 
 # ------------------------------------------------------------------ #
 # Benchmark 2: binderThroughputTest — throughput + latency             #
