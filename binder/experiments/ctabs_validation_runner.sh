@@ -1,38 +1,35 @@
 #!/bin/bash
 # ctabs_validation_runner.sh
 #
-# Runs all 7 standard VTS binder/hwbinder performance test binaries plus the
-# CTABS-specific schd-dbg-ctabs variant under several CPU-affinity scenarios:
-#   1. schd-dbg              — binder latency baseline
-#   2-4. schd-dbg-ctabs      — CTABS binder latency (organic/same-cluster/cross-cluster)
-#   5. libhwbinder_latency   — hwbinder latency (+ same/cross-cluster variants)
-#   6. binderThroughputTest + libbinder_benchmark   — binder throughput (multi-proc + payload sweep)
-#   7. hwbinderThroughputTest + libhwbinder_benchmark — hwbinder throughput (multi-proc + payload sweep)
-# Collects JSON results, optional perfetto traces, and optional simpleperf
-# cache-miss stats.
+# Runs 3 benchmarks for CTABS paper data collection:
+#   1. schd-dbg-ctabs        — latency by topology tier (same-core/same-cluster/cross-cluster)
+#   2. binderThroughputTest  — throughput + latency percentiles (with simpleperf)
+#   3. libbinder_benchmark   — latency vs payload size sweep (4B–64KB)
 #
 # Requirements:
-#   - adb device connected
-#   - Built binaries pushed to device (see --push section)
-#   - Root (adb root) recommended for simpleperf + cpufreq + affinity
+#   - adb device connected, rooted (adb root)
+#   - Built binaries pushed to device (see --push)
+#   - Kernel flashed with the target config (Baseline / CTABS v1 / CTABS v2)
 #
 # Usage:
-#   ./ctabs_validation_runner.sh [--push] [--perf] [--trace] [--out DIR]
+#   ./ctabs_validation_runner.sh [--push] [--out DIR] [--label LABEL]
 #
 # Options:
-#   --push          Push pre-built binaries to device before running
-#   --perf          Collect simpleperf cache-miss stats per scenario
-#   --trace         Start perfetto tracing during CTABS scenarios
-#   --out DIR       Output directory on host (default: ./ctabs_results_<ts>)
-#   --iter N        Iterations per pair (default: 10000)
-#   --pair N        Number of process pairs (default: 4)
+#   --push           Push pre-built binaries to device before running
+#   --out DIR        Output directory on host (default: ./ctabs_results_<label>_<ts>)
+#   --label LABEL    Kernel config label: baseline | ctabs_v1 | ctabs_v2 (default: unknown)
+#   --iter N         Iterations (default: 100000)
 #
 # Examples:
-#   # Basic validation (no simpleperf, no trace)
-#   ./ctabs_validation_runner.sh --out /tmp/ctabs_out
+#   # Single run
+#   ./ctabs_validation_runner.sh --label ctabs_v1 --out /tmp/ctabs_v1_run1
 #
-#   # Full validation with simpleperf and perfetto trace
-#   ./ctabs_validation_runner.sh --push --perf --trace --iter 20000 --pair 4
+#   # Full sweep across 3 configs (flash kernel manually between runs)
+#   for cfg in baseline ctabs_v1 ctabs_v2; do
+#     echo "Flash $cfg kernel, then press Enter..."
+#     read -r
+#     ./ctabs_validation_runner.sh --push --label "$cfg"
+#   done
 
 set -euo pipefail
 
@@ -40,22 +37,18 @@ set -euo pipefail
 # Defaults                                                             #
 # ------------------------------------------------------------------ #
 PUSH=0
-PERF=0
-TRACE=0
-ITER=10000
-PAIR=4
-OUT_DIR="./ctabs_results_$(date +%s)"
+ITER=100000
+LABEL="unknown"
+OUT_DIR=""
 DEVICE_TMP="/data/local/tmp"
-PERFETTO_CFG="$DEVICE_TMP/perfetto-config.txt"
 
 # Binaries on device
 BIN_CTABS="$DEVICE_TMP/schd-dbg-ctabs"
-BIN_SCHD_DBG="$DEVICE_TMP/schd-dbg"
-BIN_HW_LAT="$DEVICE_TMP/libhwbinder_latency"
-BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"       # frameworks/native binder throughput (multi-process)
-BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"        # system/libhwbinder/vts Benchmark_binder.cpp (payload sweep)
-BIN_HW_THRU="$DEVICE_TMP/hwbinderThroughputTest"          # Benchmark_throughput.cpp (multi-process contention)
-BIN_HW_BENCH="$DEVICE_TMP/libhwbinder_benchmark"          # Benchmark.cpp (google-benchmark payload sweep)
+BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"
+BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"
+
+# Simpleperf events matching paper Table V
+PERF_EVENTS="cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches"
 
 # ------------------------------------------------------------------ #
 # Arg parsing                                                          #
@@ -63,20 +56,24 @@ BIN_HW_BENCH="$DEVICE_TMP/libhwbinder_benchmark"          # Benchmark.cpp (googl
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --push)  PUSH=1; shift ;;
-        --perf)  PERF=1; shift ;;
-        --trace) TRACE=1; shift ;;
         --out)   OUT_DIR="$2"; shift 2 ;;
+        --label) LABEL="$2"; shift 2 ;;
         --iter)  ITER="$2"; shift 2 ;;
-        --pair)  PAIR="$2"; shift 2 ;;
-        *) echo "Unknown arg: $1"; exit 1 ;;
+        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--iter N]"; exit 1 ;;
     esac
 done
+
+# Default output directory (uses label after parsing)
+TS=$(date +%Y%m%d_%H%M%S)
+if [[ -z "$OUT_DIR" ]]; then
+    OUT_DIR="./ctabs_results_${LABEL}_${TS}"
+fi
 
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/runner.log"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== CTABS Validation Runner: $(date) ==="
-echo "ITER=$ITER PAIR=$PAIR PUSH=$PUSH PERF=$PERF TRACE=$TRACE OUT=$OUT_DIR"
+echo "LABEL=$LABEL ITER=$ITER PUSH=$PUSH OUT=$OUT_DIR"
 
 # ------------------------------------------------------------------ #
 # Helper: run adb shell and save output                               #
@@ -85,41 +82,20 @@ run_adb() {
     local label="$1"; shift
     local out_file="$OUT_DIR/${label}.json"
     echo ""
-    echo "--- Running: $label ---"
+    echo "--- $label ---"
     adb shell "$@" | tee "$out_file" || true
     echo "Saved: $out_file"
 }
 
 # ------------------------------------------------------------------ #
-# Helper: simpleperf cache-miss stats                                 #
+# Helper: run command with simpleperf stat                            #
 # ------------------------------------------------------------------ #
 run_with_perf() {
     local label="$1"; shift
     local out_file="$OUT_DIR/${label}_perf.txt"
     echo "--- Simpleperf: $label ---"
-    # Run simpleperf stat wrapping the command; collect cache metrics
-    adb shell simpleperf stat \
-        -e L1-dcache-load-misses,L1-dcache-loads,LLC-load-misses,LLC-loads,cache-misses,context-switches \
-        "$@" 2>&1 | tee "$out_file" || true
+    adb shell simpleperf stat -e "$PERF_EVENTS" "$@" 2>&1 | tee "$out_file" || true
     echo "Saved: $out_file"
-}
-
-# ------------------------------------------------------------------ #
-# Helper: perfetto trace for one scenario                             #
-# ------------------------------------------------------------------ #
-start_perfetto() {
-    local label="$1"
-    adb shell "perfetto -c $PERFETTO_CFG -o $DEVICE_TMP/trace_${label}.pb &"
-    sleep 1
-    echo "Perfetto started for $label"
-}
-
-stop_perfetto() {
-    local label="$1"
-    adb shell "kill -INT \$(pidof perfetto) 2>/dev/null || true"
-    sleep 1
-    adb pull "$DEVICE_TMP/trace_${label}.pb" "$OUT_DIR/trace_${label}.pb" 2>/dev/null || true
-    echo "Perfetto trace: $OUT_DIR/trace_${label}.pb"
 }
 
 # ------------------------------------------------------------------ #
@@ -127,45 +103,37 @@ stop_perfetto() {
 # ------------------------------------------------------------------ #
 if [[ $PUSH -eq 1 ]]; then
     echo "=== Pushing binaries ==="
-    # Adjust paths to match your AOSP out/target/product/<device>/system/bin/
-    # Note: cc_test modules (schd-dbg*, libhwbinder_latency, hwbinderThroughputTest)
-    # may instead install under out/target/product/<device>/data/nativetest/<module>/<module>
-    # cc_benchmark modules (libbinder_benchmark, libhwbinder_benchmark) follow the same pattern.
-    # Adjust AOSP_BIN or use `find out -name '<module>'` if binaries are not found here.
+    # Adjust AOSP_BIN to match your build output path
     AOSP_BIN="${AOSP_BIN:-out/target/product/generic/system/bin}"
-    for bin in schd-dbg-ctabs schd-dbg libhwbinder_latency \
-               binderThroughputTest libbinder_benchmark \
-               hwbinderThroughputTest libhwbinder_benchmark; do
-        src="$AOSP_BIN/$bin"
-        if [[ -f "$src" ]]; then
+    for bin in schd-dbg-ctabs binderThroughputTest libbinder_benchmark; do
+        # Search common locations
+        src=""
+        for dir in "$AOSP_BIN" \
+                   "${AOSP_BIN%/system/bin}/data/nativetest/$bin" \
+                   "${AOSP_BIN%/system/bin}/data/benchmarktest/$bin"; do
+            if [[ -f "$dir/$bin" ]]; then
+                src="$dir/$bin"
+                break
+            fi
+        done
+        if [[ -n "$src" ]]; then
             adb push "$src" "$DEVICE_TMP/"
             adb shell "chmod 755 $DEVICE_TMP/$bin"
-            echo "Pushed: $bin"
+            echo "  Pushed: $bin"
         else
-            echo "WARNING: $src not found, skip"
+            echo "  WARNING: $bin not found, skip"
         fi
     done
 fi
 
-# Push perfetto config if trace mode
-if [[ $TRACE -eq 1 ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    if [[ -f "$SCRIPT_DIR/perfetto-config.txt" ]]; then
-        adb push "$SCRIPT_DIR/perfetto-config.txt" "$PERFETTO_CFG"
-    else
-        echo "WARNING: perfetto-config.txt not found next to script, trace may fail"
-    fi
-fi
-
 # ------------------------------------------------------------------ #
-# Ensure CPU governor = performance (requires root)                   #
+# Ensure root access                                                   #
 # ------------------------------------------------------------------ #
-echo "=== Setting CPU governor to performance ==="
+echo "=== Ensuring root access ==="
 adb root || true
-adb shell "for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > \$f 2>/dev/null; done" || true
 
 # ------------------------------------------------------------------ #
-# Discover CPU topology on device                                     #
+# Discover CPU topology                                               #
 # ------------------------------------------------------------------ #
 echo "=== CPU Topology ==="
 TOPO_FILE="$OUT_DIR/topology.txt"
@@ -173,203 +141,70 @@ adb shell "for cpu in \$(ls /sys/devices/system/cpu/ | grep '^cpu[0-9]'); do
     id=\${cpu#cpu}
     core=\$(cat /sys/devices/system/cpu/\${cpu}/topology/core_id 2>/dev/null || echo '?')
     cluster=\$(cat /sys/devices/system/cpu/\${cpu}/topology/cluster_id 2>/dev/null || echo '?')
-    maxfreq=\$(cat /sys/devices/system/cpu/\${cpu}/cpufreq/cpuinfo_max_freq 2>/dev/null || echo '?')
-    echo \"cpu\${id}: core=\${core} cluster=\${cluster} max_freq=\${maxfreq}\"
+    echo \"cpu\${id}: core=\${core} cluster=\${cluster}\"
 done" | tee "$TOPO_FILE"
 
 # ------------------------------------------------------------------ #
-# Read topology to build cluster masks                                #
-# ------------------------------------------------------------------ #
-# Parse topology.txt (already collected above) to build cluster masks
-echo "=== Computing cluster CPU masks ==="
-CLUSTER_MASKS=$(sed -n 's/^cpu\([0-9]*\):.* cluster=\([0-9]*\) .*/\1 \2/p' "$TOPO_FILE" 2>/dev/null | awk '
-    { m[$2] += 2^$1 }
-    END { for(c in m) printf "cluster%d=0x%x ", c, m[c] }
-' 2>/dev/null) || CLUSTER_MASKS=""
-CLUSTER_MASKS=$(echo "$CLUSTER_MASKS" | xargs)
-echo "Cluster masks: [$CLUSTER_MASKS]"
-echo "$CLUSTER_MASKS" > "$OUT_DIR/cluster_masks.txt"
-
-# Parse up to 3 clusters (extract only the hex value, no trailing text)
-MASK_C0=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster0=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
-MASK_C1=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster1=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
-MASK_C2=$(echo "$CLUSTER_MASKS" | sed -n 's/.*cluster2=\(0x[0-9a-fA-F]*\).*/\1/p' || echo "")
-
-# ------------------------------------------------------------------ #
-# Section 1 — Binder latency: schd-dbg (baseline, standard VTS)      #
+# Benchmark 1: schd-dbg-ctabs — latency by topology tier              #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [1/7] Binder latency — baseline schd-dbg (standard VTS) ==="
-run_adb "1_binder_latency_baseline" \
-    "$BIN_SCHD_DBG -i $ITER -pair $PAIR" || true
+echo "================================================================"
+echo "[1/3] schd-dbg-ctabs — latency by topology tier"
+echo "      concurrency=1, ${ITER} iterations, 16B payload"
+echo "================================================================"
+run_adb "01_schd_dbg_tiered" \
+    "$BIN_CTABS -i $ITER -pair 1 -payload 16"
 
 # ------------------------------------------------------------------ #
-# Section 2 — Binder latency: schd-dbg-ctabs (no pin, organic)       #
+# Benchmark 2: binderThroughputTest — throughput + latency             #
+#             (with simpleperf hardware counters)                     #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [2/7] Binder latency — CTABS organic (no affinity pin) ==="
-[[ $TRACE -eq 1 ]] && start_perfetto "ctabs_organic"
-run_adb "2_ctabs_binder_latency_organic" \
-    "$BIN_CTABS -i $ITER -pair $PAIR -csv $DEVICE_TMP/ctabs_organic" || true
-[[ $TRACE -eq 1 ]] && stop_perfetto "ctabs_organic"
-[[ $PERF -eq 1 ]] && run_with_perf "2_ctabs_organic" \
-    "$BIN_CTABS -i $ITER -pair $PAIR" || true
-
-# Pull CSVs
-adb shell "ls $DEVICE_TMP/ctabs_organic_pair*.csv 2>/dev/null" | while read f; do
-    adb pull "$f" "$OUT_DIR/" 2>/dev/null || true
-done
+echo "================================================================"
+echo "[2/3] binderThroughputTest — throughput + latency percentiles"
+echo "      8 workers × ${ITER} iterations, 16B payload"
+echo "================================================================"
+run_with_perf "02_binder_throughput" \
+    "$BIN_BINDER_THRU -i $ITER -s 16"
 
 # ------------------------------------------------------------------ #
-# Section 3 — CTABS same-cluster (servers & clients on same cluster)  #
-# ------------------------------------------------------------------ #
-if [[ -n "$MASK_C0" ]]; then
-    echo ""
-    echo "=== [3/7] CTABS same-cluster: all on cluster0 ($MASK_C0) ==="
-    [[ $TRACE -eq 1 ]] && start_perfetto "ctabs_same_cluster"
-    run_adb "3_ctabs_same_cluster" \
-        "$BIN_CTABS -i $ITER -pair $PAIR -pin $MASK_C0 -csv $DEVICE_TMP/ctabs_same" || true
-    [[ $TRACE -eq 1 ]] && stop_perfetto "ctabs_same_cluster"
-    [[ $PERF -eq 1 ]] && run_with_perf "3_ctabs_same" \
-        "$BIN_CTABS -i $ITER -pair $PAIR -pin $MASK_C0" || true
-    adb shell "ls $DEVICE_TMP/ctabs_same_pair*.csv 2>/dev/null" | while read f; do
-        adb pull "$f" "$OUT_DIR/" 2>/dev/null || true
-    done
-fi
-
-# ------------------------------------------------------------------ #
-# Section 4 — CTABS cross-cluster (servers on C0, clients on C1)     #
-# ------------------------------------------------------------------ #
-if [[ -n "$MASK_C0" && -n "$MASK_C1" ]]; then
-    echo ""
-    echo "=== [4/7] CTABS cross-cluster: servers=$MASK_C0 clients=$MASK_C1 ==="
-    [[ $TRACE -eq 1 ]] && start_perfetto "ctabs_cross_cluster"
-    run_adb "4_ctabs_cross_cluster" \
-        "$BIN_CTABS -i $ITER -pair $PAIR -pin-servers $MASK_C0 -pin-clients $MASK_C1 \
-         -csv $DEVICE_TMP/ctabs_cross" || true
-    [[ $TRACE -eq 1 ]] && stop_perfetto "ctabs_cross_cluster"
-    [[ $PERF -eq 1 ]] && run_with_perf "4_ctabs_cross" \
-        "$BIN_CTABS -i $ITER -pair $PAIR -pin-servers $MASK_C0 -pin-clients $MASK_C1" || true
-    adb shell "ls $DEVICE_TMP/ctabs_cross_pair*.csv 2>/dev/null" | while read f; do
-        adb pull "$f" "$OUT_DIR/" 2>/dev/null || true
-    done
-fi
-
-# ------------------------------------------------------------------ #
-# Section 5 — HW-binder latency (standard VTS, with topology output) #
+# Benchmark 3: libbinder_benchmark — payload sweep                     #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [5/7] HW-binder latency — standard VTS ==="
-run_adb "5_hwbinder_latency_baseline" \
-    "$BIN_HW_LAT -i $ITER -pair $PAIR" || true
-
-# Same-cluster variant if topology available
-if [[ -n "$MASK_C0" ]]; then
-    echo ""
-    echo "    [5b] HW-binder latency — same-cluster ($MASK_C0) ==="
-    run_adb "5b_hwbinder_latency_same_cluster" \
-        "$BIN_HW_LAT -i $ITER -pair $PAIR -pin $MASK_C0" || true
-fi
-if [[ -n "$MASK_C0" && -n "$MASK_C1" ]]; then
-    echo ""
-    echo "    [5c] HW-binder latency — cross-cluster servers=$MASK_C0 clients=$MASK_C1 ==="
-    run_adb "5c_hwbinder_latency_cross_cluster" \
-        "$BIN_HW_LAT -i $ITER -pair $PAIR -pin-servers $MASK_C0 -pin-clients $MASK_C1" || true
-fi
+echo "================================================================"
+echo "[3/3] libbinder_benchmark — latency vs payload size"
+echo "      4B / 64B / 512B / 4KB / 16KB / 64KB"
+echo "================================================================"
+run_adb "03_libbinder_payload_sweep" \
+    "$BIN_BINDER_BENCH"
 
 # ------------------------------------------------------------------ #
-# Section 6 — Binder throughput (2 variants, standard VTS)            #
+# Backup: read CTABS debugfs counters if available                   #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [6/7] Binder throughput tests ==="
-run_adb "6a_binder_throughput_multiproc" \
-    "$BIN_BINDER_THRU -i $ITER" || true
-run_adb "6b_binder_throughput_payload_sweep" \
-    "$BIN_BINDER_BENCH" || true
+echo "=== CTABS debugfs counters ==="
+adb shell "cat /sys/kernel/debug/binder/ctabs/stats 2>/dev/null || \
+           echo 'debugfs not available (baseline kernel or module not loaded)'" \
+    | tee "$OUT_DIR/ctabs_stats.txt"
 
 # ------------------------------------------------------------------ #
-# Section 7 — HW-binder throughput (2 variants, standard VTS)         #
+# Collect kernel messages                                             #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== [7/7] HW-binder throughput tests ==="
-run_adb "7a_hwbinder_throughput_multiproc" \
-    "$BIN_HW_THRU -i $ITER" || true
-run_adb "7b_hwbinder_throughput_payload_sweep" \
-    "$BIN_HW_BENCH" || true
+echo "=== Kernel messages ==="
+adb shell "dmesg | tail -100" > "$OUT_DIR/dmesg.txt" 2>/dev/null || true
 
 # ------------------------------------------------------------------ #
-# Collect logs                                                         #
+# Summary                                                             #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== Collecting dmesg + logcat ==="
-adb shell "dmesg | tail -500" > "$OUT_DIR/dmesg.txt" || true
-adb logcat -d -b all > "$OUT_DIR/logcat.txt" 2>/dev/null || true
-
-# ------------------------------------------------------------------ #
-# Summary                                                              #
-# ------------------------------------------------------------------ #
-echo ""
-echo "=== DONE ==="
-echo "Results in: $OUT_DIR"
+echo "================================================================"
+echo "=== DONE: $LABEL ==="
+echo "=== Results in: $OUT_DIR ==="
+echo "================================================================"
 ls -lh "$OUT_DIR"
-
 echo ""
-echo "=== Quick latency summary ==="
-for f in "$OUT_DIR"/*.json; do
-    label=$(basename "$f" .json)
-    # Case 1: CTABS JSON — has fifo_total_ms (prefer overall total)
-    if grep -q '"fifo_total_ms"' "$f" 2>/dev/null; then
-        avg=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | head -1 | grep -o '[0-9.]*$' || \
-              grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | head -1 | grep -o '[0-9.]*$' || echo "N/A")
-        echo "  $label => avg_ms=$avg (CTABS)"
-        continue
-    fi
-    # Case 1: CTABS JSON — has fifo_total_ms (average across all pairs)
-    if grep -q '"fifo_total_ms"' "$f" 2>/dev/null; then
-        avgs=$(grep -o '"other_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
-        if [ -z "$avgs" ]; then
-            avgs=$(grep -o '"fifo_total_ms":{"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
-        fi
-        avg=$(echo "$avgs" | awk '{sum+=$1; n++} END {if(n>0) printf "%.4g", sum/n; else print "N/A"}')
-        echo "  $label => avg_ms=$avg (CTABS)"
-        continue
-    fi
-    # Case 2: Standard VTS latency JSON (baseline / hwbinder, average across pairs)
-    if grep -q '"other_ms"' "$f" 2>/dev/null; then
-        avgs=$(grep -o '"other_ms":{[[:space:]]*"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
-        if [ -z "$avgs" ]; then
-            avgs=$(grep -o '"fifo_ms":{[[:space:]]*"avg":[0-9.]*' "$f" | grep -o '[0-9.]*$')
-        fi
-        avg=$(echo "$avgs" | awk '{sum+=$1; n++} END {if(n>0) printf "%.4g", sum/n; else print "N/A"}')
-        echo "  $label => avg_ms=$avg"
-        continue
-    fi
-    # Case 3: Throughput multiproc (text: "average:0.042828ms")
-    if grep -q 'average:' "$f" 2>/dev/null; then
-        avg=$(grep -o 'average:[0-9.]*' "$f" | head -1 | cut -d: -f2 || echo "N/A")
-        echo "  $label => avg_ms=$avg (throughput)"
-        continue
-    fi
-    # Case 4: Google Benchmark table (text, no average line)
-    if grep -q 'BM_sendVec' "$f" 2>/dev/null; then
-        # Extract median time from first line (e.g. "BM_sendVec_binder/4 45448 ns ...")
-        first=$(grep 'BM_sendVec' "$f" | head -1)
-        ns=$(echo "$first" | awk '{print $2}' | grep -o '^[0-9]*' || echo "N/A")
-        if [[ "$ns" != "N/A" && -n "$ns" ]]; then
-            avg=$(echo "scale=4; $ns / 1000000" | bc 2>/dev/null || echo "N/A")
-        else
-            avg="N/A"
-        fi
-        echo "  $label => avg_ms=$avg (benchmark)"
-        continue
-    fi
-    echo "  $label => avg_ms=N/A (unrecognized format)"
+echo "Files:"
+for f in "$OUT_DIR"/*; do
+    echo "  $(basename "$f")"
 done
-
-echo ""
-echo "=== Next steps ==="
-echo "  1. Compare baseline vs CTABS avg/p99 for same-cluster and cross-cluster scenarios."
-echo "  2. If PERF was enabled, check *_perf.txt for L1/LLC miss counts."
-echo "  3. If TRACE was enabled, open trace*.pb in Perfetto UI (ui.perfetto.dev)"
-echo "     SQL: SELECT ts, name, cpu FROM ftrace WHERE name LIKE 'binder%' ORDER BY ts LIMIT 200;"
-echo "  4. Run analyze_ctabs.py (if available) on CSV files for per-tier p50/p90/p99 plots."
