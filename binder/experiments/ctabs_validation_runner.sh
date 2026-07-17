@@ -48,7 +48,7 @@ OUT_DIR=""
 DEVICE_TMP="/data/local/tmp"
 
 # Binaries on device
-BIN_CTABS="$DEVICE_TMP/schd-dbg-ctabs"
+BIN_CTABS="$DEVICE_TMP/schd-dbg"
 BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"
 BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"
 
@@ -118,7 +118,7 @@ if [[ $PUSH -eq 1 ]]; then
     echo "=== Pushing binaries ==="
     # Adjust AOSP_BIN to match your build output path
     AOSP_BIN="${AOSP_BIN:-out/target/product/generic/system/bin}"
-    for bin in schd-dbg-ctabs binderThroughputTest libbinder_benchmark; do
+    for bin in schd-dbg binderThroughputTest libbinder_benchmark; do
         # Search common locations
         src=""
         for dir in "$AOSP_BIN" \
