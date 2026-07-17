@@ -18,17 +18,21 @@
 #   --push           Push pre-built binaries to device before running
 #   --out DIR        Output directory on host (default: ./ctabs_results_<label>_<ts>)
 #   --label LABEL    Kernel config label: baseline | ctabs_v1 | ctabs_v2 (default: unknown)
+#   --gov GOVERNOR   CPU governor: schedutil | performance (default: schedutil)
 #   --iter N         Iterations (default: 100000)
 #
 # Examples:
-#   # Single run
-#   ./ctabs_validation_runner.sh --label ctabs_v1 --out /tmp/ctabs_v1_run1
+#   # Single run with schedutil governor
+#   ./ctabs_validation_runner.sh --label ctabs_v1 --gov schedutil
+#
+#   # Run with performance governor
+#   ./ctabs_validation_runner.sh --label baseline --gov performance
 #
 #   # Full sweep across 3 configs (flash kernel manually between runs)
 #   for cfg in baseline ctabs_v1 ctabs_v2; do
 #     echo "Flash $cfg kernel, then press Enter..."
 #     read -r
-#     ./ctabs_validation_runner.sh --push --label "$cfg"
+#     ./ctabs_validation_runner.sh --push --label "$cfg" --gov schedutil
 #   done
 
 set -euo pipefail
@@ -39,6 +43,7 @@ set -euo pipefail
 PUSH=0
 ITER=100000
 LABEL="unknown"
+GOV="schedutil"
 OUT_DIR=""
 DEVICE_TMP="/data/local/tmp"
 
@@ -48,7 +53,9 @@ BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"
 BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"
 
 # Simpleperf events matching paper Table V
-PERF_EVENTS="cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches"
+# Standard Linux perf event names (prefix: cpu-cycles, not cycles).
+# On ARM PMUv3, also try raw codes if named events fail.
+PERF_EVENTS="cpu-cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches"
 
 # ------------------------------------------------------------------ #
 # Arg parsing                                                          #
@@ -58,8 +65,9 @@ while [[ $# -gt 0 ]]; do
         --push)  PUSH=1; shift ;;
         --out)   OUT_DIR="$2"; shift 2 ;;
         --label) LABEL="$2"; shift 2 ;;
+        --gov)   GOV="$2"; shift 2 ;;
         --iter)  ITER="$2"; shift 2 ;;
-        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--iter N]"; exit 1 ;;
+        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--gov schedutil|performance] [--iter N]"; exit 1 ;;
     esac
 done
 
@@ -73,7 +81,7 @@ mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/runner.log"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== CTABS Validation Runner: $(date) ==="
-echo "LABEL=$LABEL ITER=$ITER PUSH=$PUSH OUT=$OUT_DIR"
+echo "LABEL=$LABEL GOV=$GOV ITER=$ITER PUSH=$PUSH OUT=$OUT_DIR"
 
 # ------------------------------------------------------------------ #
 # Helper: run adb shell and save output                               #
@@ -127,10 +135,34 @@ if [[ $PUSH -eq 1 ]]; then
 fi
 
 # ------------------------------------------------------------------ #
-# Ensure root access                                                   #
+# Ensure root access + set CPU governor                               #
 # ------------------------------------------------------------------ #
-echo "=== Ensuring root access ==="
+echo "=== Setting CPU governor: $GOV ==="
 adb root || true
+adb shell "for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do \
+    echo $GOV > \$f 2>/dev/null; done" || true
+
+# Verify governor + check frequencies
+echo "=== CPU governor verification ==="
+GOV_FILE="$OUT_DIR/cpu_governor.txt"
+adb shell "echo '--- Governor ---' && \
+    cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort -u && \
+    echo '' && \
+    echo '--- Frequencies ---' && \
+    for cpu in \$(ls /sys/devices/system/cpu/ | grep '^cpu[0-9]'); do \
+        cur=\$(cat /sys/devices/system/cpu/\${cpu}/cpufreq/scaling_cur_freq 2>/dev/null || echo '?'); \
+        min=\$(cat /sys/devices/system/cpu/\${cpu}/cpufreq/scaling_min_freq 2>/dev/null || echo '?'); \
+        max=\$(cat /sys/devices/system/cpu/\${cpu}/cpufreq/scaling_max_freq 2>/dev/null || echo '?'); \
+        gov=\$(cat /sys/devices/system/cpu/\${cpu}/cpufreq/scaling_governor 2>/dev/null || echo '?'); \
+        echo \"\${cpu}: \${cur} kHz (gov=\${gov}, min=\${min}, max=\${max})\"; \
+    done" | tee "$GOV_FILE"
+
+# ------------------------------------------------------------------ #
+# Check simpleperf available events                                   #
+# ------------------------------------------------------------------ #
+echo "=== Simpleperf available events ==="
+PERF_LIST_FILE="$OUT_DIR/simpleperf_list.txt"
+adb shell simpleperf list 2>/dev/null | head -80 | tee "$PERF_LIST_FILE" || true
 
 # ------------------------------------------------------------------ #
 # Discover CPU topology                                               #
