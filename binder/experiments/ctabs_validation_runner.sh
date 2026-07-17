@@ -52,10 +52,12 @@ BIN_CTABS="$DEVICE_TMP/schd-dbg-ctabs"
 BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"
 BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"
 
-# Simpleperf events matching paper Table V
-# Standard Linux perf event names (prefix: cpu-cycles, not cycles).
-# On ARM PMUv3, also try raw codes if named events fail.
-PERF_EVENTS="cpu-cycles,instructions,cache-references,cache-misses,cpu-migrations,context-switches"
+# Simpleperf event groups — each ≤6 events for precise non-multiplexed counting.
+# Three groups cover general perf, cache hierarchy, and memory pipeline.
+# binderThroughputTest runs 3×, one per group.
+PERF_GROUP_A="cpu-cycles,instructions,cpu-migrations,cache-references,cache-misses,context-switches"
+PERF_GROUP_B="armv8_pmuv3/l1d_cache_refill/,armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l3d_cache_refill/,armv8_pmuv3/l1d_cache/,armv8_pmuv3/l2d_cache/,armv8_pmuv3/l3d_cache/"
+PERF_GROUP_C="armv8_pmuv3/stall_backend/,armv8_pmuv3/stall_frontend/,armv8_pmuv3/mem_access/,armv8_pmuv3/bus_access/,armv8_pmuv3/l1d_tlb_refill/,armv8_pmuv3/l2d_tlb_refill/"
 
 # ------------------------------------------------------------------ #
 # Arg parsing                                                          #
@@ -97,12 +99,15 @@ run_adb() {
 
 # ------------------------------------------------------------------ #
 # Helper: run command with simpleperf stat                            #
+# Usage: run_with_perf <events> <label> <command...>
 # ------------------------------------------------------------------ #
 run_with_perf() {
+    local events="$1"; shift
     local label="$1"; shift
     local out_file="$OUT_DIR/${label}_perf.txt"
     echo "--- Simpleperf: $label ---"
-    adb shell simpleperf stat -e "$PERF_EVENTS" "$@" 2>&1 | tee "$out_file" || true
+    echo "  Events: $events"
+    adb shell simpleperf stat -e "$events" "$@" 2>&1 | tee "$out_file" || true
     echo "Saved: $out_file"
 }
 
@@ -189,14 +194,19 @@ run_adb "01_schd_dbg_tiered" \
 
 # ------------------------------------------------------------------ #
 # Benchmark 2: binderThroughputTest — throughput + latency             #
-#             (with simpleperf hardware counters)                     #
+#             (with simpleperf hardware counters, 3 event groups)     #
 # ------------------------------------------------------------------ #
 echo ""
 echo "================================================================"
 echo "[2/3] binderThroughputTest — throughput + latency percentiles"
 echo "      8 workers × ${ITER} iterations, 16B payload"
+echo "      3 simpleperf groups (A: general, B: cache, C: mem pipeline)"
 echo "================================================================"
-run_with_perf "02_binder_throughput" \
+run_with_perf "$PERF_GROUP_A" "02a_binder_throughput" \
+    "$BIN_BINDER_THRU -i $ITER -s 16"
+run_with_perf "$PERF_GROUP_B" "02b_binder_throughput" \
+    "$BIN_BINDER_THRU -i $ITER -s 16"
+run_with_perf "$PERF_GROUP_C" "02c_binder_throughput" \
     "$BIN_BINDER_THRU -i $ITER -s 16"
 
 # ------------------------------------------------------------------ #
