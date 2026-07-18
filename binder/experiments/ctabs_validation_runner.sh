@@ -262,11 +262,12 @@ adb shell "cat /sys/kernel/debug/binder/ctabs/stats 2>/dev/null || \
     | tee "$OUT_DIR/ctabs_stats.txt"
 
 # ------------------------------------------------------------------ #
-# Collect kernel messages                                             #
+# Collect logs                                                         #
 # ------------------------------------------------------------------ #
 echo ""
-echo "=== Kernel messages ==="
-adb shell "dmesg | tail -100" > "$OUT_DIR/dmesg.txt" 2>/dev/null || true
+echo "=== Collecting dmesg + logcat ==="
+adb shell "dmesg | tail -500" > "$OUT_DIR/dmesg.txt" || true
+adb logcat -d -b all > "$OUT_DIR/logcat.txt" 2>/dev/null || true
 
 # ------------------------------------------------------------------ #
 # Summary                                                             #
