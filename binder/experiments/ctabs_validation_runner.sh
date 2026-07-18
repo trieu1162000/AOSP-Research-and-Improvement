@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 # ctabs_validation_runner.sh
 #
 # Runs 3 benchmarks for CTABS paper data collection:
@@ -210,19 +210,21 @@ run_adb "01c_schd_dbg_pair8" \
 # ------------------------------------------------------------------ #
 # Benchmark 2: binderThroughputTest — throughput + latency             #
 #             (with simpleperf hardware counters, 3 event groups)     #
+#              3 worker counts)                                       #
 # ------------------------------------------------------------------ #
 echo ""
 echo "================================================================"
 echo "[2/3] binderThroughputTest — throughput + latency percentiles"
-echo "      8 workers × ${ITER} iterations, 16B payload"
-echo "      3 simpleperf groups (A: general, B: cache, C: mem pipeline)"
+echo "      workers=2/4/8 × ${ITER} iterations × 3 perf groups"
 echo "================================================================"
-run_with_perf "$PERF_GROUP_A" "02a_binder_throughput" \
-    "$BIN_BINDER_THRU -i $ITER -s 16"
-run_with_perf "$PERF_GROUP_B" "02b_binder_throughput" \
-    "$BIN_BINDER_THRU -i $ITER -s 16"
-run_with_perf "$PERF_GROUP_C" "02c_binder_throughput" \
-    "$BIN_BINDER_THRU -i $ITER -s 16"
+for w in 2 4 8; do
+    run_with_perf "$PERF_GROUP_A" "02_btt_w${w}_a" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+    run_with_perf "$PERF_GROUP_B" "02_btt_w${w}_b" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+    run_with_perf "$PERF_GROUP_C" "02_btt_w${w}_c" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+done
 
 # ------------------------------------------------------------------ #
 # Benchmark 3: libbinder_benchmark — payload sweep                     #
