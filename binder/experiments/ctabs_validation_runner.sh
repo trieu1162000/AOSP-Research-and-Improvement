@@ -44,6 +44,7 @@ PUSH=0
 ITER=100000
 LABEL="unknown"
 GOV="schedutil"
+DELAY=3
 OUT_DIR=""
 DEVICE_TMP="/data/local/tmp"
 
@@ -68,8 +69,9 @@ while [[ $# -gt 0 ]]; do
         --out)   OUT_DIR="$2"; shift 2 ;;
         --label) LABEL="$2"; shift 2 ;;
         --gov)   GOV="$2"; shift 2 ;;
+        --delay) DELAY="$2"; shift 2 ;;
         --iter)  ITER="$2"; shift 2 ;;
-        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--gov schedutil|performance] [--iter N]"; exit 1 ;;
+        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--gov schedutil|performance] [--delay N] [--iter N]"; exit 1 ;;
     esac
 done
 
@@ -83,7 +85,15 @@ mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/runner.log"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== CTABS Validation Runner: $(date) ==="
-echo "LABEL=$LABEL GOV=$GOV ITER=$ITER PUSH=$PUSH OUT=$OUT_DIR"
+echo "LABEL=$LABEL GOV=$GOV ITER=$ITER DELAY=$DELAY PUSH=$PUSH OUT=$OUT_DIR"
+
+# ------------------------------------------------------------------ #
+# Helper: cooldown — simple delay to drain pending Binder txns        #
+# ------------------------------------------------------------------ #
+cooldown() {
+    echo "  [cooldown ${DELAY}s] ..."
+    sleep "$DELAY"
+}
 
 # ------------------------------------------------------------------ #
 # Helper: run adb shell and save output                               #
@@ -192,6 +202,7 @@ echo "      ${ITER} iterations, 16B payload"
 echo "================================================================"
 run_adb "01a_schd_dbg_pair1" \
     "$BIN_CTABS -i $ITER -pair 1 -payload 16"
+cooldown
 echo ""
 echo "================================================================"
 echo "[1/3] schd-dbg — latency by topology tier (pair=4)"
@@ -199,6 +210,7 @@ echo "      ${ITER} iterations, 16B payload"
 echo "================================================================"
 run_adb "01b_schd_dbg_pair4" \
     "$BIN_CTABS -i $ITER -pair 4 -payload 16"
+cooldown
 echo ""
 echo "================================================================"
 echo "[1/3] schd-dbg — latency by topology tier (pair=8)"
@@ -220,10 +232,13 @@ echo "================================================================"
 for w in 2 4 8; do
     run_with_perf "$PERF_GROUP_A" "02_btt_w${w}_a" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
     run_with_perf "$PERF_GROUP_B" "02_btt_w${w}_b" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
     run_with_perf "$PERF_GROUP_C" "02_btt_w${w}_c" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
 done
 
 # ------------------------------------------------------------------ #
