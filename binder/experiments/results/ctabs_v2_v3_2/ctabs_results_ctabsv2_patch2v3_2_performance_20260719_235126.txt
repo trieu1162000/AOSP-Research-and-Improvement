@@ -1,0 +1,804 @@
+=== CTABS Validation Runner: Sun Jul 19 23:51:26 KST 2026 ===
+LABEL=ctabsv2_patch2v3_2_performance GOV=performance ITER=100000 DELAY=3 PUSH=0 OUT=./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126
+=== Setting CPU governor: performance ===
+adbd is already running as root
+=== CPU governor verification ===
+--- Governor ---
+performance
+
+--- Frequencies ---
+cpu0: 1785600 kHz (gov=performance, min=1036800, max=1785600)
+cpu1: 1785600 kHz (gov=performance, min=1036800, max=1785600)
+cpu2: 1785600 kHz (gov=performance, min=1036800, max=1785600)
+cpu3: 1785600 kHz (gov=performance, min=1036800, max=1785600)
+cpu4: 1920000 kHz (gov=performance, min=1056000, max=1920000)
+cpu5: 1920000 kHz (gov=performance, min=1056000, max=1920000)
+cpu6: 1920000 kHz (gov=performance, min=1056000, max=1920000)
+cpu7: 2227200 kHz (gov=performance, min=1171200, max=2227200)
+=== Simpleperf available events ===
+List of hw-cache events:
+  # More cache events are available in `simpleperf list raw`.
+  branch-load-misses
+  branch-loads
+  dTLB-load-misses
+  dTLB-loads
+  iTLB-load-misses
+  iTLB-loads
+  L1-dcache-load-misses
+  L1-dcache-loads
+  L1-icache-load-misses
+  L1-icache-loads
+
+List of coresight etm events:
+
+List of hardware events:
+  branch-misses
+  bus-cycles
+  cache-misses
+  cache-references
+  cpu-cycles
+  instructions
+  stalled-cycles-backend
+  stalled-cycles-frontend
+
+List of pmu events:
+  armv8_pmuv3/br_mis_pred/
+  armv8_pmuv3/br_mis_pred_retired/
+  armv8_pmuv3/br_pred/
+  armv8_pmuv3/br_retired/
+  armv8_pmuv3/bus_access/
+  armv8_pmuv3/bus_cycles/
+  armv8_pmuv3/cid_write_retired/
+  armv8_pmuv3/cpu_cycles/
+  armv8_pmuv3/exc_return/
+  armv8_pmuv3/exc_taken/
+  armv8_pmuv3/inst_retired/
+  armv8_pmuv3/inst_spec/
+  armv8_pmuv3/l1d_cache/
+  armv8_pmuv3/l1d_cache_refill/
+  armv8_pmuv3/l1d_cache_wb/
+  armv8_pmuv3/l1d_tlb/
+  armv8_pmuv3/l1d_tlb_refill/
+  armv8_pmuv3/l1i_cache/
+  armv8_pmuv3/l1i_cache_refill/
+  armv8_pmuv3/l1i_tlb/
+  armv8_pmuv3/l1i_tlb_refill/
+  armv8_pmuv3/l2d_cache/
+  armv8_pmuv3/l2d_cache_allocate/
+  armv8_pmuv3/l2d_cache_refill/
+  armv8_pmuv3/l2d_cache_wb/
+  armv8_pmuv3/l2d_tlb/
+  armv8_pmuv3/l2d_tlb_refill/
+  armv8_pmuv3/l3d_cache/
+  armv8_pmuv3/l3d_cache_allocate/
+  armv8_pmuv3/l3d_cache_refill/
+  armv8_pmuv3/l3d_cache_wb/
+  armv8_pmuv3/mem_access/
+  armv8_pmuv3/memory_error/
+  armv8_pmuv3/stall_backend/
+  armv8_pmuv3/stall_frontend/
+  armv8_pmuv3/ttbr_write_retired/
+
+List of raw events provided by cpu pmu:
+  # Please refer to "PMU common architectural and microarchitectural event numbers"
+  # and "ARM recommendations for IMPLEMENTATION DEFINED event numbers" listed in
+  # ARMv8 manual for details.
+  # A possible link is https://developer.arm.com/docs/ddi0487/latest/arm-architecture-reference-manual-armv8-for-armv8-a-architecture-profile.
+  raw-ase-spec		# Operation speculatively executed, Advanced SIMD instruction
+  raw-br-immed-retired (may not supported)		# Instruction architecturally executed, immediate branch
+  raw-br-immed-spec		# Branch speculatively executed, immediate branch
+  raw-br-indirect-spec		# Branch speculatively executed, indirect branch
+  raw-br-mis-pred		# Mispredicted or not predicted branch Speculatively executed
+  raw-br-mis-pred-retired		# Instruction architecturally executed, mispredicted branch
+  raw-br-pred		# Predictable branch Speculatively executed
+  raw-br-retired		# Instruction architecturally executed, branch
+  raw-br-return-retired (may not supported)		# Instruction architecturally executed, Condition code check pass, procedure return
+  raw-br-return-spec		# Branch speculatively executed, procedure return
+  raw-bus-access		# Bus access
+  raw-bus-access-normal (may not supported)		# Bus access, normal
+=== CPU Topology ===
+cpu0: core=0 cluster=0
+cpu1: core=1 cluster=0
+cpu2: core=2 cluster=0
+cpu3: core=3 cluster=0
+cpu4: core=0 cluster=1
+cpu5: core=1 cluster=1
+cpu6: core=2 cluster=1
+cpu7: core=0 cluster=2
+
+================================================================
+[1/3] schd-dbg — latency by topology tier (pair=1)
+      100000 iterations, 16B payload
+================================================================
+
+--- 01a_schd_dbg_pair1 ---
+{
+"cfg":{"pair":1,"nr_cpus":8,"iterations":100000,"deadline_us":2500,"payload_size":16},
+"topology": {
+  "nr_cpus": 8,
+  "cpus": [
+    {"cpu":0,"core":0,"cluster":0},
+    {"cpu":1,"core":1,"cluster":0},
+    {"cpu":2,"core":2,"cluster":0},
+    {"cpu":3,"core":3,"cluster":0},
+    {"cpu":4,"core":0,"cluster":1},
+    {"cpu":5,"core":1,"cluster":1},
+    {"cpu":6,"core":2,"cluster":1},
+    {"cpu":7,"core":0,"cluster":2}
+  ]
+},
+"P0":{"SYNC":"GOOD","S":200000,"I":200000,"R":1,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.075,"wst":1   ,"bst":0.053,"miss":0,"meetR":1},"same_core_n":100000,
+    "same_cluster":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"same_cluster_n":0,
+    "cross_cluster":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"cross_cluster_n":0,
+    "total":{ "avg":0.075,"wst":1   ,"bst":0.053,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.052,"wst":7.7 ,"bst":0.043,"miss":4,"meetR":0.99996},"same_core_n":99902,
+    "same_cluster":{ "avg":0.26,"wst":2.9 ,"bst":0.083,"miss":1,"meetR":0.98795},"same_cluster_n":83,
+    "cross_cluster":{ "avg":0.37,"wst":1.5 ,"bst":0.14,"miss":0,"meetR":1},"cross_cluster_n":15,
+    "total":{ "avg":0.052,"wst":7.7 ,"bst":0.043,"miss":5,"meetR":0.99995}
+  }
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/01a_schd_dbg_pair1.json
+  [cooldown 3s] ...
+
+================================================================
+[1/3] schd-dbg — latency by topology tier (pair=4)
+      100000 iterations, 16B payload
+================================================================
+
+--- 01b_schd_dbg_pair4 ---
+{
+"cfg":{"pair":4,"nr_cpus":8,"iterations":100000,"deadline_us":2500,"payload_size":16},
+"topology": {
+  "nr_cpus": 8,
+  "cpus": [
+    {"cpu":0,"core":0,"cluster":0},
+    {"cpu":1,"core":1,"cluster":0},
+    {"cpu":2,"core":2,"cluster":0},
+    {"cpu":3,"core":3,"cluster":0},
+    {"cpu":4,"core":0,"cluster":1},
+    {"cpu":5,"core":1,"cluster":1},
+    {"cpu":6,"core":2,"cluster":1},
+    {"cpu":7,"core":0,"cluster":2}
+  ]
+},
+"P0":{"SYNC":"GOOD","S":199566,"I":200000,"R":0.99783,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.084,"wst":1   ,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99566,
+    "same_cluster":{ "avg":0.2 ,"wst":0.79,"bst":0.14,"miss":0,"meetR":1},"same_cluster_n":337,
+    "cross_cluster":{ "avg":0.22,"wst":0.57,"bst":0.14,"miss":0,"meetR":1},"cross_cluster_n":97,
+    "total":{ "avg":0.084,"wst":1   ,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.18,"wst":4.5 ,"bst":0.043,"miss":9,"meetR":0.99988},"same_core_n":75044,
+    "same_cluster":{ "avg":0.25,"wst":3   ,"bst":0.074,"miss":3,"meetR":0.99986},"same_cluster_n":21529,
+    "cross_cluster":{ "avg":0.27,"wst":2.5 ,"bst":0.067,"miss":0,"meetR":1},"cross_cluster_n":3427,
+    "total":{ "avg":0.2 ,"wst":4.5 ,"bst":0.043,"miss":12,"meetR":0.99988}
+  }
+},
+"P1":{"SYNC":"GOOD","S":199524,"I":200000,"R":0.99762,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.083,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1},"same_core_n":99524,
+    "same_cluster":{ "avg":0.2 ,"wst":0.49,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":353,
+    "cross_cluster":{ "avg":0.23,"wst":0.47,"bst":0.13,"miss":0,"meetR":1},"cross_cluster_n":123,
+    "total":{ "avg":0.084,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.18,"wst":5.2 ,"bst":0.043,"miss":24,"meetR":0.99968},"same_core_n":75517,
+    "same_cluster":{ "avg":0.25,"wst":3.6 ,"bst":0.073,"miss":4,"meetR":0.99981},"same_cluster_n":21295,
+    "cross_cluster":{ "avg":0.28,"wst":2.5 ,"bst":0.063,"miss":0,"meetR":1},"cross_cluster_n":3188,
+    "total":{ "avg":0.2 ,"wst":5.2 ,"bst":0.043,"miss":28,"meetR":0.99972}
+  }
+},
+"P2":{"SYNC":"GOOD","S":199465,"I":200000,"R":0.997325,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.084,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1},"same_core_n":99465,
+    "same_cluster":{ "avg":0.2 ,"wst":0.43,"bst":0.1 ,"miss":0,"meetR":1},"same_cluster_n":410,
+    "cross_cluster":{ "avg":0.23,"wst":0.57,"bst":0.12,"miss":0,"meetR":1},"cross_cluster_n":125,
+    "total":{ "avg":0.085,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.18,"wst":4.3 ,"bst":0.043,"miss":14,"meetR":0.99981},"same_core_n":75478,
+    "same_cluster":{ "avg":0.25,"wst":4   ,"bst":0.073,"miss":3,"meetR":0.99986},"same_cluster_n":21413,
+    "cross_cluster":{ "avg":0.28,"wst":2.9 ,"bst":0.072,"miss":1,"meetR":0.99968},"cross_cluster_n":3109,
+    "total":{ "avg":0.2 ,"wst":4.3 ,"bst":0.043,"miss":18,"meetR":0.99982}
+  }
+},
+"P3":{"SYNC":"GOOD","S":199537,"I":200000,"R":0.997685,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.084,"wst":0.99,"bst":0.05,"miss":0,"meetR":1},"same_core_n":99537,
+    "same_cluster":{ "avg":0.2 ,"wst":0.44,"bst":0.11,"miss":0,"meetR":1},"same_cluster_n":343,
+    "cross_cluster":{ "avg":0.22,"wst":0.52,"bst":0.1 ,"miss":0,"meetR":1},"cross_cluster_n":120,
+    "total":{ "avg":0.084,"wst":0.99,"bst":0.05,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.18,"wst":5   ,"bst":0.043,"miss":7,"meetR":0.99991},"same_core_n":75178,
+    "same_cluster":{ "avg":0.25,"wst":3.4 ,"bst":0.07,"miss":4,"meetR":0.99981},"same_cluster_n":21434,
+    "cross_cluster":{ "avg":0.28,"wst":3.2 ,"bst":0.071,"miss":2,"meetR":0.99941},"cross_cluster_n":3388,
+    "total":{ "avg":0.2 ,"wst":5   ,"bst":0.043,"miss":13,"meetR":0.99987}
+  }
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/01b_schd_dbg_pair4.json
+  [cooldown 3s] ...
+
+================================================================
+[1/3] schd-dbg — latency by topology tier (pair=8)
+      100000 iterations, 16B payload
+================================================================
+
+--- 01c_schd_dbg_pair8 ---
+{
+"cfg":{"pair":8,"nr_cpus":8,"iterations":100000,"deadline_us":2500,"payload_size":16},
+"topology": {
+  "nr_cpus": 8,
+  "cpus": [
+    {"cpu":0,"core":0,"cluster":0},
+    {"cpu":1,"core":1,"cluster":0},
+    {"cpu":2,"core":2,"cluster":0},
+    {"cpu":3,"core":3,"cluster":0},
+    {"cpu":4,"core":0,"cluster":1},
+    {"cpu":5,"core":1,"cluster":1},
+    {"cpu":6,"core":2,"cluster":1},
+    {"cpu":7,"core":0,"cluster":2}
+  ]
+},
+"P0":{"SYNC":"GOOD","S":199215,"I":200000,"R":0.996075,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1},"same_core_n":99215,
+    "same_cluster":{ "avg":0.26,"wst":0.63,"bst":0.14,"miss":0,"meetR":1},"same_cluster_n":417,
+    "cross_cluster":{ "avg":0.29,"wst":0.6 ,"bst":0.089,"miss":0,"meetR":1},"cross_cluster_n":368,
+    "total":{ "avg":0.097,"wst":1.1 ,"bst":0.05,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":13  ,"bst":0.043,"miss":207,"meetR":0.9973},"same_core_n":76540,
+    "same_cluster":{ "avg":0.55,"wst":4.7 ,"bst":0.061,"miss":34,"meetR":0.99507},"same_cluster_n":6899,
+    "cross_cluster":{ "avg":0.43,"wst":6.3 ,"bst":0.053,"miss":67,"meetR":0.99595},"cross_cluster_n":16561,
+    "total":{ "avg":0.4 ,"wst":13  ,"bst":0.043,"miss":308,"meetR":0.99692}
+  }
+},
+"P1":{"SYNC":"GOOD","S":199204,"I":200000,"R":0.99602,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.7 ,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99204,
+    "same_cluster":{ "avg":0.26,"wst":0.86,"bst":0.15,"miss":0,"meetR":1},"same_cluster_n":414,
+    "cross_cluster":{ "avg":0.3 ,"wst":0.65,"bst":0.13,"miss":0,"meetR":1},"cross_cluster_n":382,
+    "total":{ "avg":0.098,"wst":0.86,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":6.1 ,"bst":0.043,"miss":201,"meetR":0.99736},"same_core_n":76043,
+    "same_cluster":{ "avg":0.55,"wst":6.7 ,"bst":0.072,"miss":37,"meetR":0.99461},"same_cluster_n":6864,
+    "cross_cluster":{ "avg":0.43,"wst":5.8 ,"bst":0.077,"miss":52,"meetR":0.99696},"cross_cluster_n":17093,
+    "total":{ "avg":0.4 ,"wst":6.7 ,"bst":0.043,"miss":290,"meetR":0.9971}
+  }
+},
+"P2":{"SYNC":"GOOD","S":199199,"I":200000,"R":0.995995,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.68,"bst":0.048,"miss":0,"meetR":1},"same_core_n":99199,
+    "same_cluster":{ "avg":0.26,"wst":0.54,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":422,
+    "cross_cluster":{ "avg":0.28,"wst":0.69,"bst":0.11,"miss":0,"meetR":1},"cross_cluster_n":379,
+    "total":{ "avg":0.097,"wst":0.69,"bst":0.048,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":7.3 ,"bst":0.043,"miss":198,"meetR":0.99741},"same_core_n":76314,
+    "same_cluster":{ "avg":0.55,"wst":4.1 ,"bst":0.067,"miss":35,"meetR":0.99501},"same_cluster_n":7012,
+    "cross_cluster":{ "avg":0.43,"wst":6.8 ,"bst":0.055,"miss":62,"meetR":0.99628},"cross_cluster_n":16674,
+    "total":{ "avg":0.4 ,"wst":7.3 ,"bst":0.043,"miss":295,"meetR":0.99705}
+  }
+},
+"P3":{"SYNC":"GOOD","S":199244,"I":200000,"R":0.99622,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":1.1 ,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99244,
+    "same_cluster":{ "avg":0.26,"wst":0.57,"bst":0.14,"miss":0,"meetR":1},"same_cluster_n":390,
+    "cross_cluster":{ "avg":0.29,"wst":0.64,"bst":0.13,"miss":0,"meetR":1},"cross_cluster_n":366,
+    "total":{ "avg":0.097,"wst":1.1 ,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":7.3 ,"bst":0.043,"miss":182,"meetR":0.99763},"same_core_n":76636,
+    "same_cluster":{ "avg":0.56,"wst":5.3 ,"bst":0.069,"miss":29,"meetR":0.99574},"same_cluster_n":6814,
+    "cross_cluster":{ "avg":0.42,"wst":4.1 ,"bst":0.077,"miss":56,"meetR":0.99662},"cross_cluster_n":16550,
+    "total":{ "avg":0.4 ,"wst":7.3 ,"bst":0.043,"miss":267,"meetR":0.99733}
+  }
+},
+"P4":{"SYNC":"GOOD","S":199201,"I":200000,"R":0.996005,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.62,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99201,
+    "same_cluster":{ "avg":0.26,"wst":0.65,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":422,
+    "cross_cluster":{ "avg":0.29,"wst":0.6 ,"bst":0.12,"miss":0,"meetR":1},"cross_cluster_n":377,
+    "total":{ "avg":0.097,"wst":0.65,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":7.3 ,"bst":0.043,"miss":180,"meetR":0.99763},"same_core_n":75826,
+    "same_cluster":{ "avg":0.55,"wst":5   ,"bst":0.067,"miss":31,"meetR":0.99566},"same_cluster_n":7139,
+    "cross_cluster":{ "avg":0.42,"wst":5   ,"bst":0.067,"miss":59,"meetR":0.99654},"cross_cluster_n":17035,
+    "total":{ "avg":0.4 ,"wst":7.3 ,"bst":0.043,"miss":270,"meetR":0.9973}
+  }
+},
+"P5":{"SYNC":"GOOD","S":199183,"I":200000,"R":0.995915,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.71,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99183,
+    "same_cluster":{ "avg":0.26,"wst":0.56,"bst":0.14,"miss":0,"meetR":1},"same_cluster_n":438,
+    "cross_cluster":{ "avg":0.29,"wst":1.2 ,"bst":0.11,"miss":0,"meetR":1},"cross_cluster_n":379,
+    "total":{ "avg":0.098,"wst":1.2 ,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":7.7 ,"bst":0.043,"miss":219,"meetR":0.99712},"same_core_n":76126,
+    "same_cluster":{ "avg":0.55,"wst":5.5 ,"bst":0.067,"miss":38,"meetR":0.99449},"same_cluster_n":6902,
+    "cross_cluster":{ "avg":0.42,"wst":7.5 ,"bst":0.071,"miss":52,"meetR":0.99694},"cross_cluster_n":16972,
+    "total":{ "avg":0.4 ,"wst":7.7 ,"bst":0.043,"miss":309,"meetR":0.99691}
+  }
+},
+"P6":{"SYNC":"GOOD","S":199214,"I":200000,"R":0.99607,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.64,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99214,
+    "same_cluster":{ "avg":0.27,"wst":0.62,"bst":0.12,"miss":0,"meetR":1},"same_cluster_n":392,
+    "cross_cluster":{ "avg":0.28,"wst":0.62,"bst":0.13,"miss":0,"meetR":1},"cross_cluster_n":394,
+    "total":{ "avg":0.097,"wst":0.64,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.39,"wst":5.6 ,"bst":0.043,"miss":203,"meetR":0.99737},"same_core_n":77097,
+    "same_cluster":{ "avg":0.56,"wst":4.5 ,"bst":0.059,"miss":43,"meetR":0.99384},"same_cluster_n":6980,
+    "cross_cluster":{ "avg":0.43,"wst":6.1 ,"bst":0.076,"miss":58,"meetR":0.99636},"cross_cluster_n":15923,
+    "total":{ "avg":0.4 ,"wst":6.1 ,"bst":0.043,"miss":304,"meetR":0.99696}
+  }
+},
+"P7":{"SYNC":"GOOD","S":199212,"I":200000,"R":0.99606,
+  "fifo_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.096,"wst":0.64,"bst":0.049,"miss":0,"meetR":1},"same_core_n":99212,
+    "same_cluster":{ "avg":0.26,"wst":0.68,"bst":0.13,"miss":0,"meetR":1},"same_cluster_n":404,
+    "cross_cluster":{ "avg":0.28,"wst":0.57,"bst":0.15,"miss":0,"meetR":1},"cross_cluster_n":384,
+    "total":{ "avg":0.098,"wst":0.68,"bst":0.049,"miss":0,"meetR":1}
+  }
+,
+  "other_tiered": {
+    "unknown":{ "avg":0,"wst":0,"bst":0,"miss":0,"meetR":1 },"unknown_n":0,
+    "same_core":{ "avg":0.38,"wst":4.9 ,"bst":0.043,"miss":188,"meetR":0.99753},"same_core_n":76240,
+    "same_cluster":{ "avg":0.55,"wst":4.5 ,"bst":0.065,"miss":40,"meetR":0.99423},"same_cluster_n":6937,
+    "cross_cluster":{ "avg":0.43,"wst":5.4 ,"bst":0.076,"miss":53,"meetR":0.99685},"cross_cluster_n":16823,
+    "total":{ "avg":0.4 ,"wst":5.4 ,"bst":0.043,"miss":281,"meetR":0.99719}
+  }
+},
+"inheritance": "PASS"
+}
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/01c_schd_dbg_pair8.json
+
+================================================================
+[2/3] binderThroughputTest — PASS 1: throughput (no profiler)
+      workers=2/4/8 × 100000 iterations
+================================================================
+
+--- 02_btt_w2_throughput ---
+Created BinderWorker0
+Created BinderWorker1
+waiting for workers to complete
+iterations per sec: 32100.3
+collecting results
+killing workers
+average:0.0553311ms worst:3.63016ms best:0.031667ms
+50%: 0.040833 90%: 0.092187 95%: 0.099844 99%: 0.132292
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w2_throughput.json
+  [cooldown 3s] ...
+
+--- 02_btt_w4_throughput ---
+Created BinderWorker1
+Created BinderWorker0
+Created BinderWorker2
+Created BinderWorker3
+waiting for workers to complete
+iterations per sec: 41099.2
+collecting results
+killing workers
+average:0.0855854ms worst:13.917ms best:0.032709ms
+50%: 0.058959 90%: 0.147761 95%: 0.178177 99%: 0.338281
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w4_throughput.json
+  [cooldown 3s] ...
+
+--- 02_btt_w8_throughput ---
+Created BinderWorker0
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker4
+Created BinderWorker3
+Created BinderWorker5
+Created BinderWorker6
+Created BinderWorker7
+waiting for workers to complete
+iterations per sec: 44739.8
+collecting results
+killing workers
+average:0.146069ms worst:18.8872ms best:0.033438ms
+50%: 0.107396 90%: 0.292188 95%: 0.3825 99%: 0.681771
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w8_throughput.json
+  [cooldown 3s] ...
+
+================================================================
+[2/3] binderThroughputTest — PASS 2: hw counters (simpleperf)
+      workers=2/4/8 × 100000 iterations × 3 perf groups
+================================================================
+--- Simpleperf: 02_btt_w2_perf_a ---
+  Events: cpu-cycles,instructions,cpu-migrations,cache-references,cache-misses,context-switches
+Created BinderWorker0
+Created BinderWorker1
+waiting for workers to complete
+iterations per sec: 30375.4
+collecting results
+killing workers
+average:0.0592638ms worst:12.7437ms best:0.033855ms
+50%: 0.042448 90%: 0.104948 95%: 0.113593 99%: 0.140677
+Performance counter statistics:
+
+#          count  event_name         # count / runtime
+  16,983,429,176  cpu-cycles         # 1.900068 GHz 
+   7,720,948,614  instructions       # 861.544 M/sec
+         132,484  cpu-migrations     # 11.429 K/sec 
+   3,777,373,135  cache-references   # 425.803 M/sec
+     111,957,499  cache-misses       # 12.735 M/sec 
+         449,498  context-switches   # 38.778 K/sec 
+
+Total test time: 6.617677 seconds.
+simpleperf W cmd_stat.cpp:948] It seems the number of hardware events are more than the number of
+available CPU PMU hardware counters. That will trigger hardware counter
+multiplexing. As a result, events are not counted all the time processes
+running, and event counts are smaller than what really happen.
+Use --print-hw-counter to show available hardware counters.
+If on a rooted device, try --use-devfreq-counters to get more counters.
+
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w2_perf_a_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w2_perf_b ---
+  Events: armv8_pmuv3/l1d_cache_refill/,armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l3d_cache_refill/,armv8_pmuv3/l1d_cache/,armv8_pmuv3/l2d_cache/,armv8_pmuv3/l3d_cache/
+Created BinderWorker0
+Created BinderWorker1
+waiting for workers to complete
+iterations per sec: 30782.4
+collecting results
+killing workers
+average:0.0593951ms worst:2.63078ms best:0.032032ms
+50%: 0.042448 90%: 0.102657 95%: 0.110885 99%: 0.139739
+Performance counter statistics:
+
+#         count  event_name                      # count / runtime
+     72,805,233  armv8_pmuv3/l1d_cache_refill/   # 12.202 M/sec 
+    228,209,219  armv8_pmuv3/l2d_cache_refill/   # 38.637 M/sec 
+      1,775,076  armv8_pmuv3/l3d_cache_refill/   # 300.798 K/sec
+  2,443,905,572  armv8_pmuv3/l1d_cache/          # 418.485 M/sec
+    849,108,440  armv8_pmuv3/l2d_cache/          # 143.909 M/sec
+    298,130,537  armv8_pmuv3/l3d_cache/          # 50.483 M/sec 
+
+Total test time: 6.525379 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w2_perf_b_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w2_perf_c ---
+  Events: armv8_pmuv3/stall_backend/,armv8_pmuv3/stall_frontend/,armv8_pmuv3/mem_access/,armv8_pmuv3/bus_access/,armv8_pmuv3/l1d_tlb_refill/,armv8_pmuv3/l2d_tlb_refill/
+Created BinderWorker1
+Created BinderWorker0
+waiting for workers to complete
+iterations per sec: 30272.3
+collecting results
+killing workers
+average:0.0592088ms worst:4.21943ms best:0.031094ms
+50%: 0.042032 90%: 0.103854 95%: 0.113385 99%: 0.150157
+Performance counter statistics:
+
+#         count  event_name                    # count / runtime
+  3,799,040,938  armv8_pmuv3/stall_backend/    # 664.401 M/sec
+  3,835,073,813  armv8_pmuv3/stall_frontend/   # 654.784 M/sec
+  2,472,226,274  armv8_pmuv3/mem_access/       # 415.199 M/sec
+  1,333,427,768  armv8_pmuv3/bus_access/       # 220.915 M/sec
+     59,491,966  armv8_pmuv3/l1d_tlb_refill/   # 10.089 M/sec 
+      7,834,988  armv8_pmuv3/l2d_tlb_refill/   # 1.351 M/sec  
+
+Total test time: 6.633674 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w2_perf_c_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w4_perf_a ---
+  Events: cpu-cycles,instructions,cpu-migrations,cache-references,cache-misses,context-switches
+Created BinderWorker1
+Created BinderWorker3
+Created BinderWorker2
+Created BinderWorker0
+waiting for workers to complete
+iterations per sec: 38270.3
+collecting results
+killing workers
+average:0.0905552ms worst:8.25938ms best:0.033541ms
+50%: 0.059219 90%: 0.161406 95%: 0.196562 99%: 0.361771
+Performance counter statistics:
+
+#          count  event_name         # count / runtime
+  40,774,266,557  cpu-cycles         # 1.756753 GHz 
+  16,763,747,964  instructions       # 713.022 M/sec
+         416,082  cpu-migrations     # 13.615 K/sec 
+   8,315,431,301  cache-references   # 357.181 M/sec
+     289,294,666  cache-misses       # 12.603 M/sec 
+         948,491  context-switches   # 31.036 K/sec 
+
+Total test time: 10.508089 seconds.
+simpleperf W cmd_stat.cpp:948] It seems the number of hardware events are more than the number of
+available CPU PMU hardware counters. That will trigger hardware counter
+multiplexing. As a result, events are not counted all the time processes
+running, and event counts are smaller than what really happen.
+Use --print-hw-counter to show available hardware counters.
+If on a rooted device, try --use-devfreq-counters to get more counters.
+
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w4_perf_a_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w4_perf_b ---
+  Events: armv8_pmuv3/l1d_cache_refill/,armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l3d_cache_refill/,armv8_pmuv3/l1d_cache/,armv8_pmuv3/l2d_cache/,armv8_pmuv3/l3d_cache/
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker0
+Created BinderWorker3
+waiting for workers to complete
+iterations per sec: 38316.4
+collecting results
+killing workers
+average:0.0860566ms worst:9.70615ms best:0.032343ms
+50%: 0.055417 90%: 0.152135 95%: 0.185677 99%: 0.343803
+Performance counter statistics:
+
+#         count  event_name                      # count / runtime
+    177,145,275  armv8_pmuv3/l1d_cache_refill/   # 11.956 M/sec 
+    650,155,636  armv8_pmuv3/l2d_cache_refill/   # 43.447 M/sec 
+      8,049,728  armv8_pmuv3/l3d_cache_refill/   # 523.120 K/sec
+  5,401,392,337  armv8_pmuv3/l1d_cache/          # 356.302 M/sec
+  1,940,012,079  armv8_pmuv3/l2d_cache/          # 129.232 M/sec
+    823,306,679  armv8_pmuv3/l3d_cache/          # 56.436 M/sec 
+
+Total test time: 10.488032 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w4_perf_b_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w4_perf_c ---
+  Events: armv8_pmuv3/stall_backend/,armv8_pmuv3/stall_frontend/,armv8_pmuv3/mem_access/,armv8_pmuv3/bus_access/,armv8_pmuv3/l1d_tlb_refill/,armv8_pmuv3/l2d_tlb_refill/
+Created BinderWorker0
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker3
+waiting for workers to complete
+iterations per sec: 38104.6
+collecting results
+killing workers
+average:0.0850452ms worst:19.9334ms best:0.032344ms
+50%: 0.053854 90%: 0.152969 95%: 0.184739 99%: 0.34099
+Performance counter statistics:
+
+#         count  event_name                    # count / runtime
+  9,171,449,812  armv8_pmuv3/stall_backend/    # 619.734 M/sec
+  9,698,877,741  armv8_pmuv3/stall_frontend/   # 656.553 M/sec
+  5,412,436,081  armv8_pmuv3/mem_access/       # 356.790 M/sec
+  3,738,996,006  armv8_pmuv3/bus_access/       # 248.134 M/sec
+    129,151,700  armv8_pmuv3/l1d_tlb_refill/   # 8.556 M/sec  
+     43,433,144  armv8_pmuv3/l2d_tlb_refill/   # 2.955 M/sec  
+
+Total test time: 10.543935 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w4_perf_c_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w8_perf_a ---
+  Events: cpu-cycles,instructions,cpu-migrations,cache-references,cache-misses,context-switches
+Created BinderWorker0
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker3
+Created BinderWorker4
+Created BinderWorker5
+Created BinderWorker6
+Created BinderWorker7
+waiting for workers to complete
+iterations per sec: 40659.6
+collecting results
+killing workers
+average:0.157308ms worst:37.6202ms best:0.034323ms
+50%: 0.114948 90%: 0.320625 95%: 0.422396 99%: 0.762917
+Performance counter statistics:
+
+#          count  event_name         # count / runtime
+  96,881,027,406  cpu-cycles         # 1.527609 GHz 
+  33,621,752,539  instructions       # 526.852 M/sec
+         792,951  cpu-migrations     # 9.576 K/sec  
+  16,342,901,411  cache-references   # 253.607 M/sec
+     691,571,313  cache-misses       # 10.993 M/sec 
+       1,857,383  context-switches   # 22.430 K/sec 
+
+Total test time: 19.771020 seconds.
+simpleperf W cmd_stat.cpp:948] It seems the number of hardware events are more than the number of
+available CPU PMU hardware counters. That will trigger hardware counter
+multiplexing. As a result, events are not counted all the time processes
+running, and event counts are smaller than what really happen.
+Use --print-hw-counter to show available hardware counters.
+If on a rooted device, try --use-devfreq-counters to get more counters.
+
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w8_perf_a_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w8_perf_b ---
+  Events: armv8_pmuv3/l1d_cache_refill/,armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l3d_cache_refill/,armv8_pmuv3/l1d_cache/,armv8_pmuv3/l2d_cache/,armv8_pmuv3/l3d_cache/
+Created BinderWorker0
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker4
+Created BinderWorker5
+Created BinderWorker6
+Created BinderWorker3
+Created BinderWorker7
+waiting for workers to complete
+iterations per sec: 42169.5
+collecting results
+killing workers
+average:0.160994ms worst:37.8896ms best:0.033386ms
+50%: 0.117605 90%: 0.324323 95%: 0.425208 99%: 0.768646
+Performance counter statistics:
+
+#          count  event_name                      # count / runtime
+     449,771,854  armv8_pmuv3/l1d_cache_refill/   # 10.632 M/sec 
+   1,606,433,432  armv8_pmuv3/l2d_cache_refill/   # 37.252 M/sec 
+      34,582,113  armv8_pmuv3/l3d_cache_refill/   # 790.057 K/sec
+  10,608,939,115  armv8_pmuv3/l1d_cache/          # 243.924 M/sec
+   4,155,008,291  armv8_pmuv3/l2d_cache/          # 97.368 M/sec 
+   2,249,055,963  armv8_pmuv3/l3d_cache/          # 53.517 M/sec 
+
+Total test time: 19.063598 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w8_perf_b_perf.txt
+  [cooldown 3s] ...
+--- Simpleperf: 02_btt_w8_perf_c ---
+  Events: armv8_pmuv3/stall_backend/,armv8_pmuv3/stall_frontend/,armv8_pmuv3/mem_access/,armv8_pmuv3/bus_access/,armv8_pmuv3/l1d_tlb_refill/,armv8_pmuv3/l2d_tlb_refill/
+Created BinderWorker0
+Created BinderWorker7
+Created BinderWorker1
+Created BinderWorker2
+Created BinderWorker3
+Created BinderWorker4
+Created BinderWorker5
+Created BinderWorker6
+waiting for workers to complete
+iterations per sec: 41719.7
+collecting results
+killing workers
+average:0.158797ms worst:47.7598ms best:0.033021ms
+50%: 0.116146 90%: 0.321666 95%: 0.421667 99%: 0.762291
+Performance counter statistics:
+
+#          count  event_name                    # count / runtime
+  23,833,914,602  armv8_pmuv3/stall_backend/    # 567.144 M/sec
+  23,961,624,976  armv8_pmuv3/stall_frontend/   # 560.233 M/sec
+  10,930,337,881  armv8_pmuv3/mem_access/       # 251.326 M/sec
+   9,807,809,946  armv8_pmuv3/bus_access/       # 230.455 M/sec
+     304,230,887  armv8_pmuv3/l1d_tlb_refill/   # 7.276 M/sec  
+     138,026,826  armv8_pmuv3/l2d_tlb_refill/   # 3.359 M/sec  
+
+Total test time: 19.266669 seconds.
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/02_btt_w8_perf_c_perf.txt
+  [cooldown 3s] ...
+
+================================================================
+[3/3] libbinder_benchmark — latency vs payload size
+      4B / 64B / 512B / 4KB / 16KB / 64KB
+================================================================
+
+--- 03_libbinder_payload_sweep ---
+2026-06-25T16:19:22+00:00
+Running /data/local/tmp/libbinder_benchmark
+Run on (8 X 1785.6 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 128 KiB (x8)
+  L3 Unified 2048 KiB (x1)
+------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations
+------------------------------------------------------------------
+BM_sendVec_binder/4          44721 ns        20271 ns        32831
+BM_sendVec_binder/8          44557 ns        20195 ns        34742
+BM_sendVec_binder/16         44681 ns        20284 ns        34542
+BM_sendVec_binder/32         44623 ns        20260 ns        34509
+BM_sendVec_binder/64         45210 ns        20664 ns        33919
+BM_sendVec_binder/128        45667 ns        20845 ns        33542
+BM_sendVec_binder/256        46116 ns        21209 ns        32976
+BM_sendVec_binder/512        47212 ns        22063 ns        31758
+BM_sendVec_binder/1024       49903 ns        25782 ns        28672
+BM_sendVec_binder/2048       52127 ns        28092 ns        24908
+BM_sendVec_binder/4096       58636 ns        33818 ns        20699
+BM_sendVec_binder/8192       71671 ns        45147 ns        15479
+BM_sendVec_binder/16384      98699 ns        67889 ns        10369
+BM_sendVec_binder/32768     151915 ns       113474 ns         6192
+BM_sendVec_binder/65536     352801 ns       250658 ns         2960
+Saved: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126/03_libbinder_payload_sweep.json
+
+=== CTABS debugfs counters ===
+debugfs not available (baseline kernel or module not loaded)
+
+=== Collecting dmesg + logcat ===
+
+================================================================
+=== DONE: ctabsv2_patch2v3_2_performance ===
+=== Results in: ./ctabs_results_ctabsv2_patch2v3_2_performance_20260719_235126 ===
+================================================================
+total 28M
+-rw-r--r-- 1 worker worker 1.4K Jul 19 23:52 01a_schd_dbg_pair1.json
+-rw-r--r-- 1 worker worker 4.4K Jul 19 23:53 01b_schd_dbg_pair4.json
+-rw-r--r-- 1 worker worker 8.3K Jul 19 23:54 01c_schd_dbg_pair8.json
+-rw-r--r-- 1 worker worker 1.2K Jul 19 23:55 02_btt_w2_perf_a_perf.txt
+-rw-r--r-- 1 worker worker  773 Jul 19 23:55 02_btt_w2_perf_b_perf.txt
+-rw-r--r-- 1 worker worker  759 Jul 19 23:56 02_btt_w2_perf_c_perf.txt
+-rw-r--r-- 1 worker worker  247 Jul 19 23:54 02_btt_w2_throughput.json
+-rw-r--r-- 1 worker worker 1.2K Jul 19 23:56 02_btt_w4_perf_a_perf.txt
+-rw-r--r-- 1 worker worker  818 Jul 19 23:56 02_btt_w4_perf_b_perf.txt
+-rw-r--r-- 1 worker worker  803 Jul 19 23:56 02_btt_w4_perf_c_perf.txt
+-rw-r--r-- 1 worker worker  290 Jul 19 23:55 02_btt_w4_throughput.json
+-rw-r--r-- 1 worker worker 1.3K Jul 19 23:57 02_btt_w8_perf_a_perf.txt
+-rw-r--r-- 1 worker worker  912 Jul 19 23:57 02_btt_w8_perf_b_perf.txt
+-rw-r--r-- 1 worker worker  898 Jul 19 23:57 02_btt_w8_perf_c_perf.txt
+-rw-r--r-- 1 worker worker  376 Jul 19 23:55 02_btt_w8_throughput.json
+-rw-r--r-- 1 worker worker 1.2K Jul 19 23:58 03_libbinder_payload_sweep.json
+-rw-r--r-- 1 worker worker  546 Jul 19 23:51 cpu_governor.txt
+-rw-r--r-- 1 worker worker   61 Jul 19 23:58 ctabs_stats.txt
+-rw-r--r-- 1 worker worker  37K Jul 19 23:58 dmesg.txt
+-rw-r--r-- 1 worker worker  28M Jul 19 23:58 logcat.txt
+-rw-r--r-- 1 worker worker  34K Jul 19 23:58 runner.log
+-rw-r--r-- 1 worker worker 2.8K Jul 19 23:51 simpleperf_list.txt
+-rw-r--r-- 1 worker worker  184 Jul 19 23:51 topology.txt
+
+Files:
+  01a_schd_dbg_pair1.json
+  01b_schd_dbg_pair4.json
+  01c_schd_dbg_pair8.json
+  02_btt_w2_perf_a_perf.txt
+  02_btt_w2_perf_b_perf.txt
+  02_btt_w2_perf_c_perf.txt
+  02_btt_w2_throughput.json
+  02_btt_w4_perf_a_perf.txt
+  02_btt_w4_perf_b_perf.txt
+  02_btt_w4_perf_c_perf.txt
+  02_btt_w4_throughput.json
+  02_btt_w8_perf_a_perf.txt
+  02_btt_w8_perf_b_perf.txt
+  02_btt_w8_perf_c_perf.txt
+  02_btt_w8_throughput.json
+  03_libbinder_payload_sweep.json
+  cpu_governor.txt
+  ctabs_stats.txt
+  dmesg.txt
+  logcat.txt
+  runner.log
+  simpleperf_list.txt
+  topology.txt
