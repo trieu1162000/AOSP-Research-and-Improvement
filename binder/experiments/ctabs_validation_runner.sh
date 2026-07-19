@@ -221,22 +221,34 @@ run_adb "01c_schd_dbg_pair8" \
 
 # ------------------------------------------------------------------ #
 # Benchmark 2: binderThroughputTest — throughput + latency             #
-#             (with simpleperf hardware counters, 3 event groups)     #
+#             (PASS 1: no profiling — clean throughput numbers)        #
+#             (PASS 2: with simpleperf hardware counters, 3 groups)   #
 #              3 worker counts)                                       #
 # ------------------------------------------------------------------ #
 echo ""
 echo "================================================================"
-echo "[2/3] binderThroughputTest — throughput + latency percentiles"
+echo "[2/3] binderThroughputTest — PASS 1: throughput (no profiler)"
+echo "      workers=2/4/8 × ${ITER} iterations"
+echo "================================================================"
+for w in 2 4 8; do
+    run_adb "02_btt_w${w}_throughput" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
+done
+
+echo ""
+echo "================================================================"
+echo "[2/3] binderThroughputTest — PASS 2: hw counters (simpleperf)"
 echo "      workers=2/4/8 × ${ITER} iterations × 3 perf groups"
 echo "================================================================"
 for w in 2 4 8; do
-    run_with_perf "$PERF_GROUP_A" "02_btt_w${w}_a" \
+    run_with_perf "$PERF_GROUP_A" "02_btt_w${w}_perf_a" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
     cooldown
-    run_with_perf "$PERF_GROUP_B" "02_btt_w${w}_b" \
+    run_with_perf "$PERF_GROUP_B" "02_btt_w${w}_perf_b" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
     cooldown
-    run_with_perf "$PERF_GROUP_C" "02_btt_w${w}_c" \
+    run_with_perf "$PERF_GROUP_C" "02_btt_w${w}_perf_c" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
     cooldown
 done
