@@ -53,10 +53,17 @@ BIN_CTABS="$DEVICE_TMP/schd-dbg"
 BIN_BINDER_THRU="$DEVICE_TMP/binderThroughputTest"
 BIN_BINDER_BENCH="$DEVICE_TMP/libbinder_benchmark"
 
-# Simpleperf event groups — each ≤6 events for precise non-multiplexed counting.
-# Three groups cover general perf, cache hierarchy, and memory pipeline.
-# binderThroughputTest runs 3×, one per group.
-PERF_GROUP_A="cpu-cycles,instructions,cpu-migrations,cache-references,cache-misses,context-switches"
+# Simpleperf event groups — each ≤2 events to avoid HW counter multiplexing.
+# Generic events like cache-references/cache-misses expand to multiple raw PMU
+# events on ARM (one per cache level), exceeding available counters.
+#
+# A-trio: split the original 6-event group into 3 pairs, mixing HW + SW so
+#         each group stays ≤2 HW events when expanded.
+# B: cache hierarchy (raw PMU events — 1-to-1, no expansion)
+# C: memory pipeline (raw PMU events)
+PERF_GROUP_A1="cpu-cycles,instructions"
+PERF_GROUP_A2="cache-references,cpu-migrations"
+PERF_GROUP_A3="cache-misses,context-switches"
 PERF_GROUP_B="armv8_pmuv3/l1d_cache_refill/,armv8_pmuv3/l2d_cache_refill/,armv8_pmuv3/l3d_cache_refill/,armv8_pmuv3/l1d_cache/,armv8_pmuv3/l2d_cache/,armv8_pmuv3/l3d_cache/"
 PERF_GROUP_C="armv8_pmuv3/stall_backend/,armv8_pmuv3/stall_frontend/,armv8_pmuv3/mem_access/,armv8_pmuv3/bus_access/,armv8_pmuv3/l1d_tlb_refill/,armv8_pmuv3/l2d_tlb_refill/"
 
@@ -239,10 +246,17 @@ done
 echo ""
 echo "================================================================"
 echo "[2/3] binderThroughputTest — PASS 2: hw counters (simpleperf)"
-echo "      workers=2/4/8 × ${ITER} iterations × 3 perf groups"
+echo "      workers=2/4/8 × ${ITER} iterations × 5 perf groups (A1+A2+A3+B+C)"
 echo "================================================================"
 for w in 2 4 8; do
-    run_with_perf "$PERF_GROUP_A" "02_btt_w${w}_perf_a" \
+    # A-trio: 3 subgroups, each 2 events (no multiplexing)
+    run_with_perf "$PERF_GROUP_A1" "02_btt_w${w}_perf_a1" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
+    run_with_perf "$PERF_GROUP_A2" "02_btt_w${w}_perf_a2" \
+        "$BIN_BINDER_THRU -w $w -i $ITER"
+    cooldown
+    run_with_perf "$PERF_GROUP_A3" "02_btt_w${w}_perf_a3" \
         "$BIN_BINDER_THRU -w $w -i $ITER"
     cooldown
     run_with_perf "$PERF_GROUP_B" "02_btt_w${w}_perf_b" \
