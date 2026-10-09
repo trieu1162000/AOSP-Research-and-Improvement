@@ -1,0 +1,21 @@
+label,mode,handoff,handoff_guard,reply_policy,nodrag,elect_rand,elect_cost,note
+B,0,0,15,2,,,,stock binder
+S,2,0,15,2,,,,selection only
+H,0,1,15,2,,,,handoff only
+HS,2,1,15,2,,,,HoB headline
+SR_legacy,2,2,15,0,,,,reply-only legacy always-request
+SR_ra,2,2,15,2,,,,reply-only RA v2
+All_legacy,2,3,15,0,,,,both directions legacy reply
+All_ra1,2,3,15,1,,,,both directions RA v1
+All_ra2,2,3,15,2,,,,both directions RA v2
+HS_g1,2,1,1,2,,,,guard affinity only (upstream predicate)
+HS_g3,2,1,3,2,,,,guard +exiting
+HS_g7,2,1,7,2,,,,guard +occupancy
+HS_g15,2,1,15,2,,,,guard full (same config as HS, same-batch point)
+# election-v2 decomposition (patch 0007) — tokens for ctabs_mode_sweep.sh
+C_m3,3,1,9,,0,0,0,cost-baseline: naive m3 speculative (C reference)
+P_m3n1,3,1,9,,1,0,0,P arm: no-drag fallback (wake remote on its own CPU)
+O_m3o1,3,1,9,,0,1,0,O arm: random victim within elected tier (order-only)
+CP_m3n1c1,3,1,9,,1,0,1,C+P: cost election + no-drag
+C_m3c1,3,1,9,,0,0,1,C arm: cost election with drag fallback
+BCH_m3d1w100,3,1,9,,0,0,0,BCH 0006 request-only W=100 (negative-result reference)
