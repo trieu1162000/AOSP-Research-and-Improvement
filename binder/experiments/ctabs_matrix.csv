@@ -16,6 +16,6 @@ HS_g15,2,1,15,2,,,,guard full (same config as HS, same-batch point)
 C_m3,3,1,9,,0,0,0,cost-baseline: naive m3 speculative (C reference)
 P_m3n1,3,1,9,,1,0,0,P arm: no-drag fallback (wake remote on its own CPU)
 O_m3o1,3,1,9,,0,1,0,O arm: random victim within elected tier (order-only)
-CP_m3n1c1,3,1,9,,1,0,1,C+P: cost election + no-drag
-C_m3c1,3,1,9,,0,0,1,C arm: cost election with drag fallback
+CP_m3n1c1,3,1,9,,1,0,1,C+P: cost election + no-drag (v2.1 fix)
+C_m3c1,3,1,9,,0,0,1,C arm: cost election with drag fallback (v2.1 fix: local gate mirrors admit)
 BCH_m3d1w100,3,1,9,,0,0,0,BCH 0006 request-only W=100 (negative-result reference)
