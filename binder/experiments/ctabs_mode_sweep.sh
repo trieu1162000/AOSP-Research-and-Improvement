@@ -196,7 +196,7 @@ shuffle() {   # portable shuffle
 
 # ------------------------------------------------------------------ the sweep
 : > "$OUT/summary.csv"
-echo "repeat,mode,throughput_w8,l1_avg_ms,pick_same_core,pick_same_cluster,pick_fallback,base_same_core,base_same_cluster,base_cross,rejected_capacity,upgraded_capacity,max_temp_before,guard,reply_policy,sis_current,musched_lite,handoff_extras,handoff_fallback_hits,handoff_defer,defer_window_us,nodrag,elect_rand,elect_cost,nodrag_used,nodrag_ordinary,elect_rand_used,elect_cost_used" >> "$OUT/summary.csv"
+echo "repeat,mode,throughput_w8,l1_avg_ms,pick_same_core,pick_same_cluster,pick_fallback,base_same_core,base_same_cluster,base_cross,rejected_capacity,upgraded_capacity,max_temp_before,guard,reply_policy,sis_current,musched_lite,handoff_extras,handoff_fallback_hits,handoff_defer,defer_window_us,nodrag,elect_rand,elect_cost,nodrag_used,nodrag_ordinary,elect_rand_used,elect_cost_used,elect_cost_local,elect_cost_any" >> "$OUT/summary.csv"
 
 for r in $(seq 1 "$REPEATS"); do
     ORDER=$(shuffle "$MODES")
@@ -356,9 +356,11 @@ for r in $(seq 1 "$REPEATS"); do
         nro=$(awk '/^nodrag_ordinary:/ {print $2}' "$stats" 2>/dev/null)
         eru=$(awk '/^elect_rand_used:/ {print $2}' "$stats" 2>/dev/null)
         ecu=$(awk '/^elect_cost_used:/ {print $2}' "$stats" 2>/dev/null)
+        ecl=$(awk '/^elect_cost_local:/ {print $2}' "$stats" 2>/dev/null)
+        eca=$(awk '/^elect_cost_any:/ {print $2}' "$stats" 2>/dev/null)
 
-        echo "$r,$m,${throughput:-NA},${l1:-NA},${pc:-0},${pcl:-0},${fb:-0},${sc:-NA},${scl:-NA},${scr:-NA},${rej:-NA},${upg:-NA},${TEMP_BEFORE:-NA},${hg:-NA},${rp:-NA},${sisv:-NA},${mlv:-NA},${hev:-NA},${fbh:-NA},${hdf:-NA},${dwu:-NA},${nrv:-NA},${erv:-NA},${ecv:-NA},${nru:-NA},${nro:-NA},${eru:-NA},${ecu:-NA}" >> "$OUT/summary.csv"
-        echo "  -> w8 throughput=${throughput:-NA}  rejected_cap=${rej:-NA} upgraded_cap=${upg:-NA} guard=${hg:-NA} reply_policy=${rp:-NA} sis_current=${sisv:-NA} musched_lite=${mlv:-NA} handoff_extras=${hev:-NA} fallback_hits=${fbh:-NA} handoff_defer=${hdf:-NA} defer_window_us=${dwu:-NA} nodrag=${nrv:-NA}/${nru:-NA} elect_rand=${erv:-NA}/${eru:-NA} elect_cost=${ecv:-NA}/${ecu:-NA} temp_before=${TEMP_BEFORE}"
+        echo "$r,$m,${throughput:-NA},${l1:-NA},${pc:-0},${pcl:-0},${fb:-0},${sc:-NA},${scl:-NA},${scr:-NA},${rej:-NA},${upg:-NA},${TEMP_BEFORE:-NA},${hg:-NA},${rp:-NA},${sisv:-NA},${mlv:-NA},${hev:-NA},${fbh:-NA},${hdf:-NA},${dwu:-NA},${nrv:-NA},${erv:-NA},${ecv:-NA},${nru:-NA},${nro:-NA},${eru:-NA},${ecu:-NA},${ecl:-NA},${eca:-NA}" >> "$OUT/summary.csv"
+        echo "  -> w8 throughput=${throughput:-NA}  rejected_cap=${rej:-NA} upgraded_cap=${upg:-NA} guard=${hg:-NA} reply_policy=${rp:-NA} sis_current=${sisv:-NA} musched_lite=${mlv:-NA} handoff_extras=${hev:-NA} fallback_hits=${fbh:-NA} handoff_defer=${hdf:-NA} defer_window_us=${dwu:-NA} nodrag=${nrv:-NA}/${nru:-NA} elect_rand=${erv:-NA}/${eru:-NA} elect_cost=${ecv:-NA}/${ecu:-NA} cost_local/any=${ecl:-NA}/${eca:-NA} temp_before=${TEMP_BEFORE}"
     done
 done
 
