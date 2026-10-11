@@ -20,6 +20,7 @@ CP_m3n1c1,3,1,9,,1,0,1,,C+P: cost election + no-drag (v2.1 fix)
 C_m3c1,3,1,9,,0,0,1,,C arm: cost election with drag fallback (v2.1 fix: local gate mirrors admit)
 BCH_m3d1w100,3,1,9,,0,0,0,,BCH 0006 request-only W=100 (negative-result reference)
 # B-arm load-aware (patch 0012) -- sweep token i = elect_load
-B_m3i1,3,1,9,,0,0,0,1,B-arm: idle-first election + guarded handoff (headline target arm)
-B_m3i1_nodrag,3,1,9,,1,0,0,1,B-arm + no-drag fallback
+B_m3i1,3,1,1,,0,0,0,1,B-arm: idle-first election + guarded handoff (headline target arm)
+B_m3i1_nodrag,3,1,1,,1,0,0,1,B-arm + no-drag fallback
 B_sel_m3i1,3,0,15,,0,0,0,1,B-arm selection-only (no handoff) vs S
+# guard standard (2026-10-11): g1 = upstream predicate; extra bits (2/4/8) did not add throughput (claims_sheet 2026-10-08: mh1g1 52,015 vs mh1g9 51,876)
