@@ -103,7 +103,7 @@ set_governor() {
     echo "  [gov] $(dsh 'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor')"
 }
 
-# parse token -> MODE HOFF GUARD REPLY SIS LITE DEFER WINDOW NODRAG ERAND ECOST (empty = default)
+# parse token -> MODE HOFF GUARD REPLY SIS LITE DEFER WINDOW NODRAG ERAND ECOST ELOAD (empty = default)
 parse_token() {
     local m="$1" rest
     MODE=${m%%h*}
@@ -117,6 +117,7 @@ parse_token() {
     NODRAG=""
     ERAND=""
     ECOST=""
+    ELOAD=""
     if [[ "$m" == *h* ]]; then
         rest=${m#*h}
         # right-to-left: wW dD lL sS pP gG
@@ -140,6 +141,10 @@ parse_token() {
         if [[ "$rest" == *n* ]]; then
             NODRAG=${rest##*n}
             rest=${rest%%n*}
+        fi
+        if [[ "$rest" == *i* ]]; then
+            ELOAD=${rest##*i}
+            rest=${rest%%i*}
         fi
         if [[ "$rest" == *l* ]]; then
             LITE=${rest##*l}
@@ -195,7 +200,7 @@ for job in $JOBS; do
     echo "======== config=$cfg scenario=$scen ========"
     settle_thermal
 
-    dsh "LABEL=${LABEL}_${cfg}_${scen} MODE=$MODE HANDOFF=${HOFF:-0} GUARD=${GUARD:-} REPLY_POLICY=${REPLY:-} SIS_CURRENT=${SIS:-0} MUSCHED_LITE=${LITE:-0} HANDOFF_DEFER=${DEFER:-0} DEFER_WINDOW_US=${WINDOW:-} NODRAG=${NODRAG:-0} ELECT_RAND=${ERAND:-0} ELECT_COST=${ECOST:-0} SCENARIO=$scen CACHE=$CACHE N=$N WARMUP=$WARMUP APPS='$APPS' OUT=$DEV_TMP/appstart_run.csv sh $DEV_TMP/appstart_bench.sh" \
+    dsh "LABEL=${LABEL}_${cfg}_${scen} MODE=$MODE HANDOFF=${HOFF:-0} GUARD=${GUARD:-} REPLY_POLICY=${REPLY:-} SIS_CURRENT=${SIS:-0} MUSCHED_LITE=${LITE:-0} HANDOFF_DEFER=${DEFER:-0} DEFER_WINDOW_US=${WINDOW:-} NODRAG=${NODRAG:-0} ELECT_RAND=${ERAND:-0} ELECT_COST=${ECOST:-0} ELECT_LOAD=${ELOAD:-0} SCENARIO=$scen CACHE=$CACHE N=$N WARMUP=$WARMUP APPS='$APPS' OUT=$DEV_TMP/appstart_run.csv sh $DEV_TMP/appstart_bench.sh" \
         > "$OUT/${tag}.stdout.txt" 2>&1 || echo "  !! device run failed (see ${tag}.stdout.txt)"
 
     adb pull "$DEV_TMP/appstart_run.csv" "$OUT/${tag}.csv" >/dev/null 2>&1 || true

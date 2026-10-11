@@ -61,6 +61,7 @@ DEFER_WINDOW_US=""
 NODRAG=""
 ELECT_RAND=""
 ELECT_COST=""
+ELECT_LOAD=""
 AGE_MS=""
 SCORE_LOCAL=""
 SCORE_CLUSTER=""
@@ -126,6 +127,7 @@ while [[ $# -gt 0 ]]; do
         --nodrag) NODRAG="$2"; shift 2 ;;
         --elect-rand) ELECT_RAND="$2"; shift 2 ;;
         --elect-cost) ELECT_COST="$2"; shift 2 ;;
+        --elect-load) ELECT_LOAD="$2"; shift 2 ;;
         --age-ms) AGE_MS="$2"; shift 2 ;;
         --score-local) SCORE_LOCAL="$2"; shift 2 ;;
         --score-cluster) SCORE_CLUSTER="$2"; shift 2 ;;
@@ -133,7 +135,7 @@ while [[ $# -gt 0 ]]; do
         --score-decay) SCORE_DECAY="$2"; shift 2 ;;
         --cluster-locality) CLUSTER_LOC="$2"; shift 2 ;;
         --quick) QUICK=1; shift ;;
-        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--gov schedutil|performance] [--delay N] [--iter N] [--mode 0..14] [--sync-only 0|1] [--handoff 0..3] [--guard 1|5|9|11|13|15] [--reply-policy 0|1|2] [--sis-current 0|1] [--musched-lite 0|1] [--handoff-extras N] [--handoff-defer 0|1] [--defer-window-us N] [--age-ms N] [--score-local N] [--score-cluster N] [--score-step N] [--score-decay N] [--cluster-locality 0|1] [--nodrag 0|1] [--elect-rand 0|1] [--elect-cost 0|1] [--quick]"; exit 1 ;;
+        *) echo "Usage: $0 [--push] [--out DIR] [--label LABEL] [--gov schedutil|performance] [--delay N] [--iter N] [--mode 0..14] [--sync-only 0|1] [--handoff 0..3] [--guard 1|5|9|11|13|15] [--reply-policy 0|1|2] [--sis-current 0|1] [--musched-lite 0|1] [--handoff-extras N] [--handoff-defer 0|1] [--defer-window-us N] [--age-ms N] [--score-local N] [--score-cluster N] [--score-step N] [--score-decay N] [--cluster-locality 0|1] [--nodrag 0|1] [--elect-rand 0|1] [--elect-cost 0|1] [--elect-load 0|1] [--quick]"; exit 1 ;;
     esac
 done
 
@@ -148,7 +150,7 @@ mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/runner.log"
 exec > >(tee -a "$LOG") 2>&1
 echo "=== CTABS Validation Runner: $(date) ==="
-echo "LABEL=$LABEL GOV=$GOV ITER=$ITER DELAY=$DELAY PUSH=$PUSH OUT=$OUT_DIR MODE=${MODE:-unchanged} SYNC_ONLY=${SYNC_ONLY:-unchanged} HANDOFF=${HANDOFF:-unchanged} GUARD=${GUARD:-default} REPLY_POLICY=${REPLY_POLICY:-default} SIS_CURRENT=${SIS_CURRENT:-default} MUSCHED_LITE=${MUSCHED_LITE:-default} HANDOFF_EXTRAS=${HANDOFF_EXTRAS:-default} HANDOFF_DEFER=${HANDOFF_DEFER:-default} DEFER_WINDOW_US=${DEFER_WINDOW_US:-default} AGE_MS=${AGE_MS:-default} SCORE_LOCAL=${SCORE_LOCAL:-default} SCORE_CLUSTER=${SCORE_CLUSTER:-default} SCORE_STEP=${SCORE_STEP:-default} SCORE_DECAY=${SCORE_DECAY:-default} CLUSTER_LOC=${CLUSTER_LOC:-unchanged} NODRAG=${NODRAG:-default} ELECT_RAND=${ELECT_RAND:-default} ELECT_COST=${ELECT_COST:-default}"
+echo "LABEL=$LABEL GOV=$GOV ITER=$ITER DELAY=$DELAY PUSH=$PUSH OUT=$OUT_DIR MODE=${MODE:-unchanged} SYNC_ONLY=${SYNC_ONLY:-unchanged} HANDOFF=${HANDOFF:-unchanged} GUARD=${GUARD:-default} REPLY_POLICY=${REPLY_POLICY:-default} SIS_CURRENT=${SIS_CURRENT:-default} MUSCHED_LITE=${MUSCHED_LITE:-default} HANDOFF_EXTRAS=${HANDOFF_EXTRAS:-default} HANDOFF_DEFER=${HANDOFF_DEFER:-default} DEFER_WINDOW_US=${DEFER_WINDOW_US:-default} AGE_MS=${AGE_MS:-default} SCORE_LOCAL=${SCORE_LOCAL:-default} SCORE_CLUSTER=${SCORE_CLUSTER:-default} SCORE_STEP=${SCORE_STEP:-default} SCORE_DECAY=${SCORE_DECAY:-default} CLUSTER_LOC=${CLUSTER_LOC:-unchanged} NODRAG=${NODRAG:-default} ELECT_RAND=${ELECT_RAND:-default} ELECT_COST=${ELECT_COST:-default} ELECT_LOAD=${ELECT_LOAD:-default}"
 
 # ------------------------------------------------------------------ #
 # Helper: cooldown — simple delay to drain pending Binder txns        #
@@ -255,9 +257,9 @@ adb shell "cat /proc/sys/kernel/sched_cluster_locality 2>/dev/null || echo NA" \
 # ------------------------------------------------------------------ #
 # Set CTABS runtime knobs (mode / sync_only) if requested             #
 # ------------------------------------------------------------------ #
-if [[ -n "$MODE" || -n "$SYNC_ONLY" || -n "$HANDOFF" || -n "$GUARD" || -n "$REPLY_POLICY" || -n "$SIS_CURRENT" || -n "$MUSCHED_LITE" || -n "$HANDOFF_EXTRAS" || -n "$HANDOFF_DEFER" || -n "$DEFER_WINDOW_US" || -n "$AGE_MS" || -n "$SCORE_LOCAL" || -n "$SCORE_CLUSTER" || -n "$SCORE_STEP" || -n "$SCORE_DECAY" || -n "$NODRAG" || -n "$ELECT_RAND" || -n "$ELECT_COST" ]]; then
+if [[ -n "$MODE" || -n "$SYNC_ONLY" || -n "$HANDOFF" || -n "$GUARD" || -n "$REPLY_POLICY" || -n "$SIS_CURRENT" || -n "$MUSCHED_LITE" || -n "$HANDOFF_EXTRAS" || -n "$HANDOFF_DEFER" || -n "$DEFER_WINDOW_US" || -n "$AGE_MS" || -n "$SCORE_LOCAL" || -n "$SCORE_CLUSTER" || -n "$SCORE_STEP" || -n "$SCORE_DECAY" || -n "$NODRAG" || -n "$ELECT_RAND" || -n "$ELECT_COST" || -n "$ELECT_LOAD" ]]; then
     echo "=== Setting CTABS knobs ==="
-    echo "  requested: mode=${MODE:-unchanged} sync_only=${SYNC_ONLY:-unchanged} handoff=${HANDOFF:-unchanged} guard=${GUARD:-default} reply_policy=${REPLY_POLICY:-default} sis_current=${SIS_CURRENT:-default} musched_lite=${MUSCHED_LITE:-default} handoff_extras=${HANDOFF_EXTRAS:-default} handoff_defer=${HANDOFF_DEFER:-default} defer_window_us=${DEFER_WINDOW_US:-default} age_ms=${AGE_MS:-default} score_local=${SCORE_LOCAL:-default} score_cluster=${SCORE_CLUSTER:-default} score_step=${SCORE_STEP:-default} score_decay=${SCORE_DECAY:-default} nodrag=${NODRAG:-default} elect_rand=${ELECT_RAND:-default} elect_cost=${ELECT_COST:-default}"
+    echo "  requested: mode=${MODE:-unchanged} sync_only=${SYNC_ONLY:-unchanged} handoff=${HANDOFF:-unchanged} guard=${GUARD:-default} reply_policy=${REPLY_POLICY:-default} sis_current=${SIS_CURRENT:-default} musched_lite=${MUSCHED_LITE:-default} handoff_extras=${HANDOFF_EXTRAS:-default} handoff_defer=${HANDOFF_DEFER:-default} defer_window_us=${DEFER_WINDOW_US:-default} age_ms=${AGE_MS:-default} score_local=${SCORE_LOCAL:-default} score_cluster=${SCORE_CLUSTER:-default} score_step=${SCORE_STEP:-default} score_decay=${SCORE_DECAY:-default} nodrag=${NODRAG:-default} elect_rand=${ELECT_RAND:-default} elect_cost=${ELECT_COST:-default} elect_load=${ELECT_LOAD:-default}"
 
     ctabs_ok() {
         [[ "$(adb shell "test -d $CTABS_DBG && echo yes" 2>/dev/null | tr -d '\r\n ')" == "yes" ]]
@@ -392,6 +394,7 @@ if [[ -n "$MODE" || -n "$SYNC_ONLY" || -n "$HANDOFF" || -n "$GUARD" || -n "$REPL
     [[ -n "$NODRAG" ]] && set_ctabs_u32 nodrag "$NODRAG"
     [[ -n "$ELECT_RAND" ]] && set_ctabs_u32 elect_rand "$ELECT_RAND"
     [[ -n "$ELECT_COST" ]] && set_ctabs_u32 elect_cost "$ELECT_COST"
+    [[ -n "$ELECT_LOAD" ]] && set_ctabs_u32 elect_load "$ELECT_LOAD"
 
     # hard-verify the knob actually took the requested value
     # (`|| true` inside $(): under set -e + pipefail an adb hiccup here would

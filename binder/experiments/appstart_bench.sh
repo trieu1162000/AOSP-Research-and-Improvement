@@ -35,6 +35,7 @@ DEFER_WINDOW_US=${DEFER_WINDOW_US:-100}
 NODRAG=${NODRAG:-0}
 ELECT_RAND=${ELECT_RAND:-0}
 ELECT_COST=${ELECT_COST:-0}
+ELECT_LOAD=${ELECT_LOAD:-0}
 SCENARIO=${SCENARIO:-idle}
 CACHE=${CACHE:-cold}
 APPS=${APPS:-"com.android.settings com.android.contacts com.android.calendar"}
@@ -53,7 +54,7 @@ w() {
 }
 
 setup_knobs() {
-	for k in mode handoff handoff_guard reply_policy sis_current musched_lite handoff_defer defer_window_us nodrag elect_rand elect_cost sync_only; do
+	for k in mode handoff handoff_guard reply_policy sis_current musched_lite handoff_defer defer_window_us nodrag elect_rand elect_cost elect_load sync_only; do
 		[ -e "$CTABS_DIR/$k" ] || continue
 		case "$k" in
 		mode)          w mode "$MODE" ;;
@@ -67,6 +68,7 @@ setup_knobs() {
 		nodrag)        w nodrag "$NODRAG" ;;
 		elect_rand)    w elect_rand "$ELECT_RAND" ;;
 		elect_cost)    w elect_cost "$ELECT_COST" ;;
+		elect_load)    w elect_load "$ELECT_LOAD" ;;
 		sync_only)     w sync_only 1 ;;
 		esac
 	done
@@ -199,7 +201,7 @@ run_load() {
 main() {
 	[ -n "$OUT" ] && : > "$OUT"
 	setup_knobs
-	log "# LABEL=$LABEL MODE=$MODE HANDOFF=$HANDOFF GUARD=$GUARD REPLY_POLICY=$REPLY_POLICY SIS_CURRENT=$SIS_CURRENT MUSCHED_LITE=$MUSCHED_LITE HANDOFF_DEFER=$HANDOFF_DEFER DEFER_WINDOW_US=$DEFER_WINDOW_US NODRAG=$NODRAG ELECT_RAND=$ELECT_RAND ELECT_COST=$ELECT_COST SCENARIO=$SCENARIO CACHE=$CACHE N=$N WARMUP=$WARMUP"
+	log "# LABEL=$LABEL MODE=$MODE HANDOFF=$HANDOFF GUARD=$GUARD REPLY_POLICY=$REPLY_POLICY SIS_CURRENT=$SIS_CURRENT MUSCHED_LITE=$MUSCHED_LITE HANDOFF_DEFER=$HANDOFF_DEFER DEFER_WINDOW_US=$DEFER_WINDOW_US NODRAG=$NODRAG ELECT_RAND=$ELECT_RAND ELECT_COST=$ELECT_COST ELECT_LOAD=$ELECT_LOAD SCENARIO=$SCENARIO CACHE=$CACHE N=$N WARMUP=$WARMUP"
 	log "# DATE=$(date) LOAD=${LOAD_DESC:-none} APPS=[$APPS]"
 	case "$SCENARIO" in
 	idle) run_idle ;;

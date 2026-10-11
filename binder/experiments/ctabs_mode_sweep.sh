@@ -33,10 +33,11 @@
 #   --modes "..."    space separated mode list (default: 0 2 10);
 #                    token grammar: M | MhH | MhHgG | MhHpP | MhHgGpP |
 #                    MhH...sS | MhH...lL | MhH...eE | MhH...nN | MhH...oO |
-#                    MhH...cC | MhH...dD | MhH...wW
-#                    (suffix order left->right: gG pP sS lL eE nN oO cC dD wW;
+#                    MhH...cC | MhH...iI | MhH...dD | MhH...wW
+#                    (suffix order left->right: gG pP sS lL eE nN oO cC iI dD wW;
 #                     n = nodrag P-arm, o = random victim O-arm,
-#                     c = cost election C-arm -- election v2, patch 0007)
+#                     c = cost election C-arm -- election v2, patch 0007;
+#                     i = load-aware idle-first election B-arm -- patch 0012)
 #                    where M = selection mode, H = handoff bitmask,
 #                    G = handoff_guard mask, P = reply_policy (0/1/2),
 #                    S = sis_current (0/1), L = musched_lite (0/1),
@@ -53,6 +54,7 @@
 #                      "h0s1 h0l1"                         baseline arms
 #                      "h0e1 h1g9e1 2h3g9p2e3"             P6 extensions
 #                      "3h1g9n1 3h1g9o1 3h1g9c1 3h1g9n1c1" P/O/C arms (0007)
+#                      "3h1g9i1 3h0i1"                    B-arm load-aware (0012)
 #                    (a token must contain 'h' for suffixes to be parsed,
 #                     so use "0h0e1" / "h0e1" for B+P6)
 #   --repeats N      repeats per mode (default: 5)
@@ -196,7 +198,7 @@ shuffle() {   # portable shuffle
 
 # ------------------------------------------------------------------ the sweep
 : > "$OUT/summary.csv"
-echo "repeat,mode,throughput_w8,l1_avg_ms,pick_same_core,pick_same_cluster,pick_fallback,base_same_core,base_same_cluster,base_cross,rejected_capacity,upgraded_capacity,max_temp_before,guard,reply_policy,sis_current,musched_lite,handoff_extras,handoff_fallback_hits,handoff_defer,defer_window_us,nodrag,elect_rand,elect_cost,nodrag_used,nodrag_ordinary,elect_rand_used,elect_cost_used,elect_cost_local,elect_cost_any" >> "$OUT/summary.csv"
+echo "repeat,mode,throughput_w8,l1_avg_ms,pick_same_core,pick_same_cluster,pick_fallback,base_same_core,base_same_cluster,base_cross,rejected_capacity,upgraded_capacity,max_temp_before,guard,reply_policy,sis_current,musched_lite,handoff_extras,handoff_fallback_hits,handoff_defer,defer_window_us,nodrag,elect_rand,elect_cost,nodrag_used,nodrag_ordinary,elect_rand_used,elect_cost_used,elect_cost_local,elect_cost_any,elect_load,elect_load_idle,elect_load_used" >> "$OUT/summary.csv"
 
 for r in $(seq 1 "$REPEATS"); do
     ORDER=$(shuffle "$MODES")
@@ -241,7 +243,7 @@ for r in $(seq 1 "$REPEATS"); do
         # e.g. 2h3g15p2s1l1e1d1w100.
         ctabs_m=${m%%h*}
         hoff=""; guard=""; reply=""; sis=""; lite=""; extras=""
-        defer=""; window=""; nodrag=""; erand=""; ecost=""
+        defer=""; window=""; nodrag=""; erand=""; ecost=""; eload=""
         if [[ "$m" == *h* ]]; then
             rest=${m#*h}
             # parse right-to-left: wW dD eE lL sS pP gG
@@ -260,6 +262,9 @@ for r in $(seq 1 "$REPEATS"); do
             fi
             if [[ "$rest" == *n* ]]; then
                 nodrag=${rest##*n}; rest=${rest%%n*}
+            fi
+            if [[ "$rest" == *i* ]]; then
+                eload=${rest##*i}; rest=${rest%%i*}
             fi
             if [[ "$rest" == *e* ]]; then
                 extras=${rest##*e}; rest=${rest%%e*}
@@ -291,6 +296,7 @@ for r in $(seq 1 "$REPEATS"); do
         [[ -n "$nodrag" ]] && runner_args+=(--nodrag "$nodrag")
         [[ -n "$erand" ]] && runner_args+=(--elect-rand "$erand")
         [[ -n "$ecost" ]] && runner_args+=(--elect-cost "$ecost")
+        [[ -n "$eload" ]] && runner_args+=(--elect-load "$eload")
         [[ $QUICK -eq 1 ]] && runner_args+=(--quick)
 
         # Run via bash (do not rely on the exec bit) and NEVER swallow the
@@ -358,9 +364,12 @@ for r in $(seq 1 "$REPEATS"); do
         ecu=$(awk '/^elect_cost_used:/ {print $2}' "$stats" 2>/dev/null)
         ecl=$(awk '/^elect_cost_local:/ {print $2}' "$stats" 2>/dev/null)
         eca=$(awk '/^elect_cost_any:/ {print $2}' "$stats" 2>/dev/null)
+        elv=$(awk '/^elect_load:/ {print $2}' "$stats" 2>/dev/null)
+        eli=$(awk '/^elect_load_idle:/ {print $2}' "$stats" 2>/dev/null)
+        elu=$(awk '/^elect_load_used:/ {print $2}' "$stats" 2>/dev/null)
 
-        echo "$r,$m,${throughput:-NA},${l1:-NA},${pc:-0},${pcl:-0},${fb:-0},${sc:-NA},${scl:-NA},${scr:-NA},${rej:-NA},${upg:-NA},${TEMP_BEFORE:-NA},${hg:-NA},${rp:-NA},${sisv:-NA},${mlv:-NA},${hev:-NA},${fbh:-NA},${hdf:-NA},${dwu:-NA},${nrv:-NA},${erv:-NA},${ecv:-NA},${nru:-NA},${nro:-NA},${eru:-NA},${ecu:-NA},${ecl:-NA},${eca:-NA}" >> "$OUT/summary.csv"
-        echo "  -> w8 throughput=${throughput:-NA}  rejected_cap=${rej:-NA} upgraded_cap=${upg:-NA} guard=${hg:-NA} reply_policy=${rp:-NA} sis_current=${sisv:-NA} musched_lite=${mlv:-NA} handoff_extras=${hev:-NA} fallback_hits=${fbh:-NA} handoff_defer=${hdf:-NA} defer_window_us=${dwu:-NA} nodrag=${nrv:-NA}/${nru:-NA} elect_rand=${erv:-NA}/${eru:-NA} elect_cost=${ecv:-NA}/${ecu:-NA} cost_local/any=${ecl:-NA}/${eca:-NA} temp_before=${TEMP_BEFORE}"
+        echo "$r,$m,${throughput:-NA},${l1:-NA},${pc:-0},${pcl:-0},${fb:-0},${sc:-NA},${scl:-NA},${scr:-NA},${rej:-NA},${upg:-NA},${TEMP_BEFORE:-NA},${hg:-NA},${rp:-NA},${sisv:-NA},${mlv:-NA},${hev:-NA},${fbh:-NA},${hdf:-NA},${dwu:-NA},${nrv:-NA},${erv:-NA},${ecv:-NA},${nru:-NA},${nro:-NA},${eru:-NA},${ecu:-NA},${ecl:-NA},${eca:-NA},${elv:-NA},${eli:-NA},${elu:-NA}" >> "$OUT/summary.csv"
+        echo "  -> w8 throughput=${throughput:-NA}  rejected_cap=${rej:-NA} upgraded_cap=${upg:-NA} guard=${hg:-NA} reply_policy=${rp:-NA} sis_current=${sisv:-NA} musched_lite=${mlv:-NA} handoff_extras=${hev:-NA} fallback_hits=${fbh:-NA} handoff_defer=${hdf:-NA} defer_window_us=${dwu:-NA} nodrag=${nrv:-NA}/${nru:-NA} elect_rand=${erv:-NA}/${eru:-NA} elect_cost=${ecv:-NA}/${ecu:-NA} cost_local/any=${ecl:-NA}/${eca:-NA} elect_load=${elv:-NA}/${eli:-NA}/${elu:-NA} temp_before=${TEMP_BEFORE}"
     done
 done
 
