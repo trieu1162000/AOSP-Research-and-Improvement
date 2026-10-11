@@ -1,0 +1,104 @@
+From 52b66f3e1b89db2f726d97da53db04ce1698738e Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Thu, 8 Oct 2026 21:46:36 +0700
+Subject: [PATCH] sched/binder: election-aware Binder wakeup (VWH-C)
+
+The wakee identity is part of the placement decision: for synchronous
+transactions, waking a cache-warm worker that already runs on the waker's
+CPU keeps the pair co-located without a migration, while the stock FIFO
+pick may pull a remote worker.
+
+Add a mode knob (0 = stock FIFO, 2 = same-CPU election) and counters for
+elected and fallback wakeups.  The elected thread is removed from the
+waiting list exactly like the stock selector does, so wakeup ownership is
+unchanged.  vwh_last_cpu is recorded when a thread starts waiting for
+proc work, so the election sees the CPU each waiter last blocked on.
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c | 44 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 42 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 03b38009a3e3..c20bf04b2257 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -692,6 +692,35 @@ static void vwh_note_landing(struct binder_thread *thread)
+ 	}
+ }
+ 
++/*
++ * VWH election: 0 keeps the stock FIFO pick, 2 prefers the waiting thread
++ * whose last CPU is the waker's CPU (a cache-warm worker) for synchronous
++ * transactions.  The elected thread is removed from the waiting list like
++ * the stock selector does, so wakeup ownership is unchanged.
++ */
++static unsigned int vwh_mode __read_mostly;
++static atomic_t vwh_stat_elected = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_fallback = ATOMIC_INIT(0);
++
++static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
++{
++	struct binder_thread *thread;
++	int caller_cpu = raw_smp_processor_id();
++
++	if (vwh_mode != 2)
++		return NULL;
++
++	list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
++		if (READ_ONCE(thread->vwh_last_cpu) == caller_cpu) {
++			list_del_init(&thread->waiting_thread_node);
++			atomic_inc(&vwh_stat_elected);
++			return thread;
++		}
++	}
++	atomic_inc(&vwh_stat_elect_fallback);
++	return NULL;
++}
++
+ /**
+  * binder_wakeup_thread_ilocked() - wakes up a thread for doing proc work.
+  * @proc:	process to wake up a thread in
+@@ -3139,8 +3168,12 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	trace_android_vh_binder_proc_transaction_entry(proc, t,
+ 		&thread, node->debug_id, pending_async, !oneway, &skip);
+ 
+-	if (!thread && !pending_async && !skip)
+-		thread = binder_select_thread_ilocked(proc);
++	if (!thread && !pending_async && !skip) {
++		if (!oneway)
++			thread = vwh_elect_thread(proc);
++		if (!thread)
++			thread = binder_select_thread_ilocked(proc);
++	}
+ 
+ 	trace_android_vh_binder_proc_transaction(current, proc->tsk,
+ 		thread ? thread->task : NULL, node->debug_id, t->code,
+@@ -7306,6 +7339,9 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "handoff_reply_land:%d\n", atomic_read(&vwh_stat_handoff_reply_land));
+ 	seq_printf(m, "handoff_reply_miss:%d\n", atomic_read(&vwh_stat_handoff_reply_miss));
+ 	seq_printf(m, "handoff_guard:     %u\n", handoff_guard);
++	seq_printf(m, "mode:              %u\n", vwh_mode);
++	seq_printf(m, "elected:           %d\n", atomic_read(&vwh_stat_elected));
++	seq_printf(m, "elect_fallback:    %d\n", atomic_read(&vwh_stat_elect_fallback));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7321,6 +7357,8 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_handoff_txn_miss, 0);
+ 	atomic_set(&vwh_stat_handoff_reply_land, 0);
+ 	atomic_set(&vwh_stat_handoff_reply_miss, 0);
++	atomic_set(&vwh_stat_elected, 0);
++	atomic_set(&vwh_stat_elect_fallback, 0);
+ 	return count;
+ }
+ 
+@@ -7447,6 +7485,8 @@ static int __init binder_init(void)
+ 					   &vwh_handoff);
+ 			debugfs_create_u32("handoff_guard", 0644, ctabs_dir,
+ 					   &handoff_guard);
++			debugfs_create_u32("mode", 0644, ctabs_dir,
++					   &vwh_mode);
+ 			debugfs_create_file("stats", 0444, ctabs_dir, NULL,
+ 					    &vwh_stats_fops);
+ 			debugfs_create_file("reset", 0200, ctabs_dir, NULL,

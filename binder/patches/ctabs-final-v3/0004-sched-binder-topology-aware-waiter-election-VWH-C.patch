@@ -1,0 +1,108 @@
+From e5a9f15a93061e8c96c4ee614e85ba484a7fc3a3 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Thu, 8 Oct 2026 21:46:39 +0700
+Subject: [PATCH] sched/binder: topology-aware waiter election (VWH-C+)
+
+Restore the cluster fallback of the pre-handoff topology selector as
+mode 3: prefer a waiter whose last CPU is the waker's CPU, else a waiter
+whose last CPU is in the waker's cluster, else FIFO.  Mode 2 (same-CPU
+only) leaves ~44% of synchronous transactions to FIFO, which drags a
+remote worker across clusters; with the cluster pass that fallback only
+sees waiters that at least share the cluster.
+
+The mode mirrors the old HoB topology selector (same-core +
+same-cluster) so the new stack can reproduce its anchor (mode2h1 =
+93,769 tx/s w8 at ITER=100k) before the sticky/MRU/aging/learned
+extensions are layered on top.
+
+topology_cluster_id() comes from the generic arch topology; unknown
+waiter CPUs (-1) are skipped.  New counter: elected_cluster.
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c | 33 +++++++++++++++++++++++++++++----
+ 1 file changed, 29 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index c20bf04b2257..f52f19b9bb06 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -54,6 +54,7 @@
+ #include <linux/poll.h>
+ #include <linux/debugfs.h>
+ #include <linux/rbtree.h>
++#include <linux/arch_topology.h>
+ #include <linux/sched/signal.h>
+ #include <linux/sched/mm.h>
+ #include <linux/seq_file.h>
+@@ -693,13 +694,16 @@ static void vwh_note_landing(struct binder_thread *thread)
+ }
+ 
+ /*
+- * VWH election: 0 keeps the stock FIFO pick, 2 prefers the waiting thread
++ * VWH election: 0 keeps the stock FIFO pick; 2 prefers the waiting thread
+  * whose last CPU is the waker's CPU (a cache-warm worker) for synchronous
+- * transactions.  The elected thread is removed from the waiting list like
+- * the stock selector does, so wakeup ownership is unchanged.
++ * transactions; 3 additionally falls back to a waiter on the waker's
++ * cluster before giving up to FIFO (the pre-handoff topology selector).
++ * The elected thread is removed from the waiting list like the stock
++ * selector does, so wakeup ownership is unchanged.
+  */
+ static unsigned int vwh_mode __read_mostly;
+ static atomic_t vwh_stat_elected = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elected_cluster = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_fallback = ATOMIC_INIT(0);
+ 
+ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
+@@ -707,7 +711,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
+ 	struct binder_thread *thread;
+ 	int caller_cpu = raw_smp_processor_id();
+ 
+-	if (vwh_mode != 2)
++	if (vwh_mode != 2 && vwh_mode != 3)
+ 		return NULL;
+ 
+ 	list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
+@@ -717,6 +721,25 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
+ 			return thread;
+ 		}
+ 	}
++
++	if (vwh_mode == 3) {
++		int caller_cluster = topology_cluster_id(caller_cpu);
++
++		if (caller_cluster >= 0) {
++			list_for_each_entry(thread, &proc->waiting_threads,
++					    waiting_thread_node) {
++				int waiter_cpu = READ_ONCE(thread->vwh_last_cpu);
++
++				if (waiter_cpu >= 0 &&
++				    topology_cluster_id(waiter_cpu) == caller_cluster) {
++					list_del_init(&thread->waiting_thread_node);
++					atomic_inc(&vwh_stat_elected_cluster);
++					return thread;
++				}
++			}
++		}
++	}
++
+ 	atomic_inc(&vwh_stat_elect_fallback);
+ 	return NULL;
+ }
+@@ -7341,6 +7364,7 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "handoff_guard:     %u\n", handoff_guard);
+ 	seq_printf(m, "mode:              %u\n", vwh_mode);
+ 	seq_printf(m, "elected:           %d\n", atomic_read(&vwh_stat_elected));
++	seq_printf(m, "elected_cluster:   %d\n", atomic_read(&vwh_stat_elected_cluster));
+ 	seq_printf(m, "elect_fallback:    %d\n", atomic_read(&vwh_stat_elect_fallback));
+ 	return 0;
+ }
+@@ -7358,6 +7382,7 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_handoff_reply_land, 0);
+ 	atomic_set(&vwh_stat_handoff_reply_miss, 0);
+ 	atomic_set(&vwh_stat_elected, 0);
++	atomic_set(&vwh_stat_elected_cluster, 0);
+ 	atomic_set(&vwh_stat_elect_fallback, 0);
+ 	return count;
+ }

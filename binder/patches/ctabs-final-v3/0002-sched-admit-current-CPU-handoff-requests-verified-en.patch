@@ -1,0 +1,130 @@
+From 08419b1841be9f4a4b4d285892d7aca4fa839ed4 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Tue, 6 Oct 2026 20:36:31 +0700
+Subject: [PATCH] sched: admit current-CPU handoff requests (verified envelope)
+
+An unconditional current-CPU handoff trusts the producer and can stack
+the wakee on a busy CPU, demote it across asymmetric capacity domains,
+or hand over a CPU the waker does not actually release.
+
+Replace the affinity-only predicate with an admission envelope: the
+wakee must be allowed on the waker's CPU, the waker must not be exiting,
+the target runqueue must hold only the waker, and the wakee must fit the
+target CPU.  A rejected request keeps WF_SYNC and falls through to the
+unmodified placement path.
+
+The mask is exposed as handoff_guard (ctabs debugfs, default full);
+AFFINITY alone reproduces the upstream affinity-only predicate.
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c |  6 +++++
+ kernel/sched/fair.c      | 56 +++++++++++++++++++++++++++++++++-------
+ 2 files changed, 53 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index dbec133b658e..03b38009a3e3 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -115,6 +115,9 @@ static atomic_t vwh_stat_handoff_txn_miss = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_handoff_reply_land = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_handoff_reply_miss = ATOMIC_INIT(0);
+ 
++/* VWH handoff admission mask; defined in kernel/sched/fair.c. */
++extern unsigned int handoff_guard;
++
+ static int proc_show(struct seq_file *m, void *unused);
+ DEFINE_SHOW_ATTRIBUTE(proc);
+ 
+@@ -7302,6 +7305,7 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "handoff_txn_miss:  %d\n", atomic_read(&vwh_stat_handoff_txn_miss));
+ 	seq_printf(m, "handoff_reply_land:%d\n", atomic_read(&vwh_stat_handoff_reply_land));
+ 	seq_printf(m, "handoff_reply_miss:%d\n", atomic_read(&vwh_stat_handoff_reply_miss));
++	seq_printf(m, "handoff_guard:     %u\n", handoff_guard);
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7441,6 +7445,8 @@ static int __init binder_init(void)
+ 		if (ctabs_dir) {
+ 			debugfs_create_u32("handoff", 0644, ctabs_dir,
+ 					   &vwh_handoff);
++			debugfs_create_u32("handoff_guard", 0644, ctabs_dir,
++					   &handoff_guard);
+ 			debugfs_create_file("stats", 0444, ctabs_dir, NULL,
+ 					    &vwh_stats_fops);
+ 			debugfs_create_file("reset", 0200, ctabs_dir, NULL,
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 76164a4939e1..3d3c3fd9a63a 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7524,6 +7524,48 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
+ 	return target;
+ }
+ 
++/*
++ * Handoff admission controls for current-CPU requests.  The bitmask is a
++ * debug knob: AFFINITY alone reproduces the upstream affinity-only
++ * predicate, while the full mask is the verified envelope.
++ */
++#define HANDOFF_GUARD_AFFINITY		BIT(0)
++#define HANDOFF_GUARD_EXITING		BIT(1)
++#define HANDOFF_GUARD_OCCUPANCY		BIT(2)
++#define HANDOFF_GUARD_FITS		BIT(3)
++#define HANDOFF_GUARD_FULL		(HANDOFF_GUARD_AFFINITY |	\
++					 HANDOFF_GUARD_EXITING |	\
++					 HANDOFF_GUARD_OCCUPANCY |	\
++					 HANDOFF_GUARD_FITS)
++
++unsigned int handoff_guard __read_mostly = HANDOFF_GUARD_FULL;
++
++/*
++ * Admission for a current-CPU handoff request.  A request is admitted only
++ * when the wake flags match and every enabled check passes; otherwise the
++ * caller falls through to the ordinary placement path with WF_SYNC intact.
++ */
++static bool handoff_admit(struct task_struct *p, int cpu, int wake_flags)
++{
++	unsigned int guard = READ_ONCE(handoff_guard);
++
++	if ((wake_flags & (WF_TTWU | WF_SYNC | WF_CURRENT_CPU)) !=
++	    (WF_TTWU | WF_SYNC | WF_CURRENT_CPU))
++		return false;
++
++	if ((guard & HANDOFF_GUARD_AFFINITY) &&
++	    !cpumask_test_cpu(cpu, p->cpus_ptr))
++		return false;
++	if ((guard & HANDOFF_GUARD_EXITING) && (current->flags & PF_EXITING))
++		return false;
++	if ((guard & HANDOFF_GUARD_OCCUPANCY) && cpu_rq(cpu)->nr_running != 1)
++		return false;
++	if ((guard & HANDOFF_GUARD_FITS) && !task_fits_cpu(p, cpu))
++		return false;
++
++	return true;
++}
++
+ /*
+  * select_task_rq_fair: Select target runqueue for the waking task in domains
+  * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
+@@ -7547,16 +7589,12 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	int sd_flag = wake_flags & 0xF;
+ 
+ 	/*
+-	 * VWH: WF_SYNC|WF_CURRENT_CPU means the waker guarantees it blocks
+-	 * right after this wakeup, so run the wakee on the waker's CPU when
+-	 * the wakee is allowed there.  This is the affinity-only predicate
+-	 * used by upstream select_task_rq_fair(); it is evaluated ahead of
+-	 * the vendor hook so the behaviour does not depend on the vendor
+-	 * scheduler.
++	 * VWH: WF_SYNC|WF_CURRENT_CPU asks to run the wakee on the waker's
++	 * CPU.  The request is admitted only when the envelope passes; see
++	 * handoff_admit().  A rejected request retains WF_SYNC and continues
++	 * through the unmodified placement path.
+ 	 */
+-	if ((wake_flags & (WF_TTWU | WF_SYNC | WF_CURRENT_CPU)) ==
+-	    (WF_TTWU | WF_SYNC | WF_CURRENT_CPU) &&
+-	    cpumask_test_cpu(cpu, p->cpus_ptr))
++	if (handoff_admit(p, cpu, wake_flags))
+ 		return cpu;
+ 
+ 	if (trace_android_rvh_select_task_rq_fair_enabled() &&

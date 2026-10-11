@@ -1,0 +1,248 @@
+From f8f7d3a52857223e398de649c926d5ce4d2c06e4 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Thu, 8 Oct 2026 23:19:04 +0700
+Subject: [PATCH] sched/binder: capacity-first target selection (MUSched-lite
+ baseline)
+
+Add an evaluation baseline mirroring MUSched's capacity-first select_cpu
+policy (OSDI'26): a synchronous Binder handler is placed on an idle
+high-capacity CPU, or on the least-loaded one when no big core is idle.
+MUSched itself is built on sched_ext with a VIP scheduling class, which
+the 6.1 GKI board does not provide; this is the portable subset.
+
+Binder picks the target with sched_pick_vip_cpu() and hands it to the
+scheduler through WF_TARGET_CPU, carrying the CPU in the existing
+task_struct::recent_used_cpu field.  No structure layout changes, so the
+module_layout ABI stays intact.  Off by default (musched_lite = 0).
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c | 20 +++++++++++++++
+ include/linux/sched.h    |  1 +
+ include/linux/wait.h     |  3 +++
+ kernel/sched/core.c      |  3 ++-
+ kernel/sched/fair.c      | 55 ++++++++++++++++++++++++++++++++++++++++
+ kernel/sched/sched.h     |  1 +
+ kernel/sched/wait.c      | 18 +++++++++++++
+ 7 files changed, 100 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 4b88c530cbc8..5248be01b314 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -56,6 +56,7 @@
+ #include <linux/rbtree.h>
+ #include <linux/arch_topology.h>
+ #include <linux/ktime.h>
++#include <linux/sched.h>
+ #include <linux/sched/signal.h>
+ #include <linux/sched/mm.h>
+ #include <linux/seq_file.h>
+@@ -125,6 +126,10 @@ extern atomic_t vwh_sis_calls;
+ extern atomic_t vwh_sis_hits;
+ extern atomic_t vwh_stat_sis_rvh;
+ 
++/* MUSched-lite baseline: producer-selected capacity-first target CPU. */
++static unsigned int vwh_musched_lite __read_mostly;
++static atomic_t vwh_stat_musched_lite = ATOMIC_INIT(0);
++
+ static int proc_show(struct seq_file *m, void *unused);
+ DEFINE_SHOW_ATTRIBUTE(proc);
+ 
+@@ -908,6 +913,16 @@ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
+ 		if (sync && (READ_ONCE(vwh_handoff) & VWH_HANDOFF_TXN)) {
+ 			atomic_inc(&vwh_stat_handoff_txn);
+ 			vwh_wake_handoff(thread, VWH_HANDOFF_TXN);
++		} else if (sync && READ_ONCE(vwh_musched_lite)) {
++			int t = sched_pick_vip_cpu(thread->task);
++
++			if (t >= 0) {
++				WRITE_ONCE(thread->task->recent_used_cpu, t);
++				atomic_inc(&vwh_stat_musched_lite);
++				wake_up_interruptible_sync_target_cpu(&thread->wait);
++			} else {
++				wake_up_interruptible_sync(&thread->wait);
++			}
+ 		} else if (sync) {
+ 			wake_up_interruptible_sync(&thread->wait);
+ 		} else {
+@@ -7519,6 +7534,8 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "sis_calls:         %d\n", atomic_read(&vwh_sis_calls));
+ 	seq_printf(m, "sis_hits:          %d\n", atomic_read(&vwh_sis_hits));
+ 	seq_printf(m, "sis_rvh:           %d\n", atomic_read(&vwh_stat_sis_rvh));
++	seq_printf(m, "musched_lite:      %u\n", vwh_musched_lite);
++	seq_printf(m, "musched_lite_wakes:%d\n", atomic_read(&vwh_stat_musched_lite));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7542,6 +7559,7 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_sis_calls, 0);
+ 	atomic_set(&vwh_sis_hits, 0);
+ 	atomic_set(&vwh_stat_sis_rvh, 0);
++	atomic_set(&vwh_stat_musched_lite, 0);
+ 	return count;
+ }
+ 
+@@ -7672,6 +7690,8 @@ static int __init binder_init(void)
+ 					   &vwh_mode);
+ 			debugfs_create_u32("sis_current", 0644, ctabs_dir,
+ 					   &vwh_sis_current);
++			debugfs_create_u32("musched_lite", 0644, ctabs_dir,
++					   &vwh_musched_lite);
+ 			debugfs_create_u32("age_ms", 0644, ctabs_dir,
+ 					   &vwh_age_ms);
+ 			debugfs_create_u32("score_local", 0644, ctabs_dir,
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 55337dab25c5..6325559eff1d 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -2304,6 +2304,7 @@ static inline bool vcpu_is_preempted(int cpu)
+ #endif
+ 
+ extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
++int sched_pick_vip_cpu(struct task_struct *p);
+ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
+ 
+ #ifndef TASK_SIZE_OF
+diff --git a/include/linux/wait.h b/include/linux/wait.h
+index cb8fb3855c4a..1ccd1ef8dee1 100644
+--- a/include/linux/wait.h
++++ b/include/linux/wait.h
+@@ -233,6 +233,9 @@ void __wake_up_pollfree(struct wait_queue_head *wq_head);
+ void __wake_up_sync_on_current_cpu(struct wait_queue_head *wq_head, unsigned int mode);
+ #define wake_up_interruptible_sync_on_current_cpu(x)			\
+ 	__wake_up_sync_on_current_cpu((x), TASK_INTERRUPTIBLE)
++void __wake_up_sync_target_cpu(struct wait_queue_head *wq_head, unsigned int mode);
++#define wake_up_interruptible_sync_target_cpu(x)			\
++	__wake_up_sync_target_cpu((x), TASK_INTERRUPTIBLE)
+ 
+ /*
+  * Wakeup macros to be used to report events to the targets.
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 542212850f2e..b413fdf0aa3b 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -7073,7 +7073,8 @@ int default_wake_function(wait_queue_entry_t *curr, unsigned mode, int wake_flag
+ 			  void *key)
+ {
+ 	WARN_ON_ONCE(IS_ENABLED(CONFIG_SCHED_DEBUG) &&
+-		     wake_flags & ~(WF_SYNC | WF_CURRENT_CPU | WF_ANDROID_VENDOR));
++		     wake_flags & ~(WF_SYNC | WF_CURRENT_CPU | WF_TARGET_CPU |
++				    WF_ANDROID_VENDOR));
+ 	return try_to_wake_up(curr->private, mode, wake_flags);
+ }
+ EXPORT_SYMBOL(default_wake_function);
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 6afbd10e5128..4c948a2a4678 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7711,6 +7711,19 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	if (handoff_admit(p, cpu, wake_flags))
+ 		return cpu;
+ 
++	/*
++	 * MUSched-lite baseline: honour a capacity-first target selected by
++	 * the producer (idle high-capacity CPU, else least loaded).
++	 */
++	if (wake_flags & WF_TARGET_CPU) {
++		int t = READ_ONCE(p->recent_used_cpu);
++
++		WRITE_ONCE(p->recent_used_cpu, prev_cpu);
++		if ((unsigned int)t < nr_cpu_ids && cpu_online(t) &&
++		    cpumask_test_cpu(t, p->cpus_ptr) && task_fits_cpu(p, t))
++			return t;
++	}
++
+ 	/*
+ 	 * VWH SIS comparison baseline (adapted for EAS): the original series
+ 	 * hooks the idle scan, which EAS pre-empts on mobile kernels.
+@@ -7806,6 +7819,48 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	return new_cpu;
+ }
+ 
++/*
++ * MUSched-lite baseline: choose an idle high-capacity CPU, else the
++ * least-loaded high-capacity CPU, for a synchronous IPC handler.
++ * Returns -1 when no candidate is available.
++ */
++int sched_pick_vip_cpu(struct task_struct *p)
++{
++	int cpu, best = -1, best_load = INT_MAX;
++	unsigned long max_cap = 0, cap;
++
++	for_each_online_cpu(cpu)
++		max_cap = max(max_cap, arch_scale_cpu_capacity(cpu));
++	if (!max_cap)
++		return -1;
++
++	for_each_online_cpu(cpu) {
++		cap = arch_scale_cpu_capacity(cpu);
++		if (cap * 4 < max_cap * 3)
++			continue;
++		if (!cpumask_test_cpu(cpu, p->cpus_ptr))
++			continue;
++		if (available_idle_cpu(cpu))
++			return cpu;
++	}
++
++	for_each_online_cpu(cpu) {
++		int load;
++
++		cap = arch_scale_cpu_capacity(cpu);
++		if (cap * 4 < max_cap * 3)
++			continue;
++		if (!cpumask_test_cpu(cpu, p->cpus_ptr))
++			continue;
++		load = READ_ONCE(cpu_rq(cpu)->cfs.h_nr_running);
++		if (load < best_load) {
++			best_load = load;
++			best = cpu;
++		}
++	}
++	return best;
++}
++
+ /*
+  * Called immediately before a task is migrated to a new CPU; task_cpu(p) and
+  * cfs_rq_of(p) references at time of call are still valid and identify the
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index e68f0c0cbc78..30c0801433b4 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2128,6 +2128,7 @@ static inline int task_on_rq_migrating(struct task_struct *p)
+ #define WF_SYNC     0x10 /* Waker goes to sleep after wakeup */
+ #define WF_MIGRATED 0x20 /* Internal use, task got migrated */
+ #define WF_CURRENT_CPU 0x40 /* Prefer to move the wakee to the current CPU. */
++#define WF_TARGET_CPU 0x100 /* Honour a producer-selected target CPU. */
+ 
+ #define WF_ANDROID_VENDOR	0x1000 /* Vendor specific for Android */
+ 
+diff --git a/kernel/sched/wait.c b/kernel/sched/wait.c
+index 3d011b9a1312..d5de3f613d03 100644
+--- a/kernel/sched/wait.c
++++ b/kernel/sched/wait.c
+@@ -232,6 +232,24 @@ void __wake_up_sync_on_current_cpu(struct wait_queue_head *wq_head,
+ 			      NULL);
+ }
+ 
++/*
++ * Target-CPU wakeup for an IPC-layer placement hint (MUSched-lite
++ * baseline): the target CPU travels in task_struct::recent_used_cpu
++ * and is honoured by select_task_rq_fair() when it is valid.
++ */
++void __wake_up_sync_target_cpu(struct wait_queue_head *wq_head,
++			       unsigned int mode)
++{
++	int wake_flags = WF_SYNC;
++
++	if (unlikely(!wq_head))
++		return;
++
++	trace_android_vh_set_wake_flags(&wake_flags, &mode);
++	__wake_up_common_lock(wq_head, mode, 1, wake_flags | WF_TARGET_CPU,
++			      NULL);
++}
++
+ /**
+  * __wake_up_locked_sync_key - wake up a thread blocked on a locked waitqueue.
+  * @wq_head: the waitqueue
