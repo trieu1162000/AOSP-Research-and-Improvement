@@ -1,5 +1,5 @@
 diff --git a/drivers/android/binder.c b/drivers/android/binder.c
-index f5a6aec3f00a..ae4a474b8170 100644
+index f5a6aec3f00a..18e825919734 100644
 --- a/drivers/android/binder.c
 +++ b/drivers/android/binder.c
 @@ -54,6 +54,10 @@
@@ -74,7 +74,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  static int proc_show(struct seq_file *m, void *unused);
  DEFINE_SHOW_ATTRIBUTE(proc);
  
-@@ -633,6 +684,571 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+@@ -633,6 +684,573 @@ binder_select_thread_ilocked(struct binder_proc *proc)
  	return thread;
  }
  
@@ -475,7 +475,9 @@ index f5a6aec3f00a..ae4a474b8170 100644
 +	 * Load-aware election (B arm): prefer a waiter whose last CPU is
 +	 * currently idle.  elect_load=1 accepts any cluster (same-cluster
 +	 * candidates win ties); 2 restricts the scan to the caller's
-+	 * cluster; 3 additionally requires sched_handoff_target_ok(), the
++	 * cluster, or to any candidate when the kernel reports no cluster
++	 * topology (caller_cluster < 0, single-cluster semantics); 3
++	 * additionally requires sched_handoff_target_ok(), the
 +	 * binder-visible predicate that wraps task_fits_cpu() (the raw
 +	 * helper is static to fair.c).  Without an idle match the ladder
 +	 * below still applies.
@@ -492,7 +494,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
 +
 +			if (wcpu < 0 || !available_idle_cpu(wcpu))
 +				continue;
-+			near = caller_cluster >= 0 &&
++			near = caller_cluster < 0 ||
 +			       topology_cluster_id(wcpu) == caller_cluster;
 +			if (mode >= 2 && !near)
 +				continue;
@@ -646,7 +648,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  /**
   * binder_wakeup_thread_ilocked() - wakes up a thread for doing proc work.
   * @proc:	process to wake up a thread in
-@@ -651,16 +1267,32 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+@@ -651,16 +1269,32 @@ binder_select_thread_ilocked(struct binder_proc *proc)
   */
  static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
  					 struct binder_thread *thread,
@@ -681,7 +683,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  		return;
  	}
  
-@@ -684,7 +1316,7 @@ static void binder_wakeup_proc_ilocked(struct binder_proc *proc)
+@@ -684,7 +1318,7 @@ static void binder_wakeup_proc_ilocked(struct binder_proc *proc)
  {
  	struct binder_thread *thread = binder_select_thread_ilocked(proc);
  
@@ -690,7 +692,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  }
  
  static bool is_rt_policy(int policy)
-@@ -3048,6 +3680,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+@@ -3048,6 +3682,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
  	struct binder_transaction *t_outdated = NULL;
  	bool skip = false;
  	bool enqueue_task = true;
@@ -698,7 +700,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  
  	BUG_ON(!node);
  	binder_node_lock(node);
-@@ -3076,8 +3709,14 @@ static int binder_proc_transaction(struct binder_transaction *t,
+@@ -3076,8 +3711,14 @@ static int binder_proc_transaction(struct binder_transaction *t,
  	trace_android_vh_binder_proc_transaction_entry(proc, t,
  		&thread, node->debug_id, pending_async, !oneway, &skip);
  
@@ -715,7 +717,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  
  	trace_android_vh_binder_proc_transaction(current, proc->tsk,
  		thread ? thread->task : NULL, node->debug_id, t->code,
-@@ -3111,8 +3750,21 @@ static int binder_proc_transaction(struct binder_transaction *t,
+@@ -3111,8 +3752,21 @@ static int binder_proc_transaction(struct binder_transaction *t,
  
  	trace_android_vh_binder_proc_transaction_finish(proc, t,
  		thread ? thread->task : NULL, pending_async, !oneway);
@@ -739,7 +741,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  
  	proc->outstanding_txns++;
  	binder_inner_proc_unlock(proc);
-@@ -3931,7 +4583,12 @@ static void binder_transaction(struct binder_proc *proc,
+@@ -3931,7 +4585,12 @@ static void binder_transaction(struct binder_proc *proc,
  			thread->prio_next = in_reply_to->saved_priority;
  			spin_unlock(&thread->prio_lock);
  		}
@@ -753,7 +755,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  		trace_android_vh_binder_restore_priority(in_reply_to, current);
  		binder_restore_priority(thread, &in_reply_to->saved_priority);
  		binder_free_transaction(in_reply_to);
-@@ -4808,19 +5465,38 @@ static int binder_wait_for_work(struct binder_thread *thread,
+@@ -4808,19 +5467,38 @@ static int binder_wait_for_work(struct binder_thread *thread,
  {
  	DEFINE_WAIT(wait);
  	struct binder_proc *proc = thread->proc;
@@ -793,7 +795,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  		binder_inner_proc_lock(proc);
  		list_del_init(&thread->waiting_thread_node);
  		if (signal_pending(current)) {
-@@ -5455,6 +6131,23 @@ static struct binder_thread *binder_get_thread_ilocked(
+@@ -5455,6 +6133,23 @@ static struct binder_thread *binder_get_thread_ilocked(
  	spin_lock_init(&thread->prio_lock);
  	thread->prio_state = BINDER_PRIO_SET;
  	thread->ee.command = BR_OK;
@@ -817,7 +819,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  	INIT_LIST_HEAD(&new_thread->waiting_thread_node);
  	return thread;
  }
-@@ -5506,6 +6199,8 @@ static void binder_free_proc(struct binder_proc *proc)
+@@ -5506,6 +6201,8 @@ static void binder_free_proc(struct binder_proc *proc)
  static void binder_free_thread(struct binder_thread *thread)
  {
  	BUG_ON(!list_empty(&thread->todo));
@@ -826,7 +828,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  	binder_stats_deleted(BINDER_STAT_THREAD);
  	binder_proc_dec_tmpref(thread->proc);
  	put_task_struct(thread->task);
-@@ -5543,6 +6238,9 @@ static int binder_thread_release(struct binder_proc *proc,
+@@ -5543,6 +6240,9 @@ static int binder_thread_release(struct binder_proc *proc,
  		__acquire(&t->lock);
  	}
  	thread->is_dead = true;
@@ -836,7 +838,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  
  	while (t) {
  		last_t = t;
-@@ -5585,6 +6283,9 @@ static int binder_thread_release(struct binder_proc *proc,
+@@ -5585,6 +6285,9 @@ static int binder_thread_release(struct binder_proc *proc,
  
  	binder_inner_proc_unlock(thread->proc);
  
@@ -846,7 +848,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  	/*
  	 * This is needed to avoid races between wake_up_pollfree() above and
  	 * someone else removing the last entry from the queue for other reasons
-@@ -7219,6 +7920,102 @@ DEFINE_SHOW_ATTRIBUTE(transactions);
+@@ -7219,6 +7922,102 @@ DEFINE_SHOW_ATTRIBUTE(transactions);
  DEFINE_SHOW_ATTRIBUTE(transactions_hashed);
  DEFINE_SHOW_ATTRIBUTE(transaction_log);
  
@@ -949,7 +951,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  const struct binder_debugfs_entry binder_debugfs_entries[] = {
  	{
  		.name = "state",
-@@ -7312,6 +8109,7 @@ static int __init binder_init(void)
+@@ -7312,6 +8111,7 @@ static int __init binder_init(void)
  	binder_debugfs_dir_entry_root = debugfs_create_dir("binder", NULL);
  	if (binder_debugfs_dir_entry_root) {
  		const struct binder_debugfs_entry *db_entry;
@@ -957,7 +959,7 @@ index f5a6aec3f00a..ae4a474b8170 100644
  
  		binder_for_each_debugfs_entry(db_entry)
  			debugfs_create_file(db_entry->name,
-@@ -7322,6 +8120,50 @@ static int __init binder_init(void)
+@@ -7322,6 +8122,50 @@ static int __init binder_init(void)
  
  		binder_debugfs_dir_entry_proc = debugfs_create_dir("proc",
  						 binder_debugfs_dir_entry_root);

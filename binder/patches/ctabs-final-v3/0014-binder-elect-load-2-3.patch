@@ -1,4 +1,4 @@
-From c1fdc4573b326e2c33fbb006d9e87cbb759685f1 Mon Sep 17 00:00:00 2001
+From d64a0b93071ef56787dc837c088c2d96ee9bf097 Mon Sep 17 00:00:00 2001
 From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
 Date: Sun, 11 Oct 2026 18:09:58 +0700
 Subject: [PATCH] binder: extend load-aware election (elect_load=2/3)
@@ -15,11 +15,11 @@ Add an elect_load_idle_near counter (stats and reset) so the
 same-cluster share of idle picks is measurable.  elect_load_used keeps
 counting every resolution while the arm is enabled.
 ---
- drivers/android/binder.c | 36 +++++++++++++++++++++++++++++++-----
- 1 file changed, 31 insertions(+), 5 deletions(-)
+ drivers/android/binder.c | 38 +++++++++++++++++++++++++++++++++-----
+ 1 file changed, 33 insertions(+), 5 deletions(-)
 
 diff --git a/drivers/android/binder.c b/drivers/android/binder.c
-index a6431d8a3681..ae4a474b8170 100644
+index a6431d8a3681..18e825919734 100644
 --- a/drivers/android/binder.c
 +++ b/drivers/android/binder.c
 @@ -812,7 +812,7 @@ static unsigned int vwh_score_decay __read_mostly = 4;
@@ -39,7 +39,7 @@ index a6431d8a3681..ae4a474b8170 100644
  static atomic_t vwh_stat_elect_load_used = ATOMIC_INIT(0);
  
  #define VWH_COST_MIG_SAME	0
-@@ -1076,17 +1077,34 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+@@ -1076,17 +1077,36 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
  		}
  	}
  
@@ -48,7 +48,9 @@ index a6431d8a3681..ae4a474b8170 100644
 +	 * Load-aware election (B arm): prefer a waiter whose last CPU is
 +	 * currently idle.  elect_load=1 accepts any cluster (same-cluster
 +	 * candidates win ties); 2 restricts the scan to the caller's
-+	 * cluster; 3 additionally requires sched_handoff_target_ok(), the
++	 * cluster, or to any candidate when the kernel reports no cluster
++	 * topology (caller_cluster < 0, single-cluster semantics); 3
++	 * additionally requires sched_handoff_target_ok(), the
 +	 * binder-visible predicate that wraps task_fits_cpu() (the raw
 +	 * helper is static to fair.c).  Without an idle match the ladder
 +	 * below still applies.
@@ -65,7 +67,7 @@ index a6431d8a3681..ae4a474b8170 100644
  
  			if (wcpu < 0 || !available_idle_cpu(wcpu))
  				continue;
-+			near = caller_cluster >= 0 &&
++			near = caller_cluster < 0 ||
 +			       topology_cluster_id(wcpu) == caller_cluster;
 +			if (mode >= 2 && !near)
 +				continue;
@@ -75,7 +77,7 @@ index a6431d8a3681..ae4a474b8170 100644
  			if (READ_ONCE(vwh_elect_rand)) {
  				if (get_random_u32_below(++ni) == 0)
  					idle_any = thread;
-@@ -1094,14 +1112,19 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+@@ -1094,14 +1114,19 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
  			}
  			if (!idle_any)
  				idle_any = thread;
@@ -98,7 +100,7 @@ index a6431d8a3681..ae4a474b8170 100644
  		}
  		/* no idle waiter -> fall through to same-CPU */
  	}
-@@ -7943,6 +7966,8 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+@@ -7943,6 +7968,8 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
  	seq_printf(m, "elect_cost_any:    %d\n", atomic_read(&vwh_stat_elect_cost_any));
  	seq_printf(m, "elect_load_idle:   %d\n",
  		   atomic_read(&vwh_stat_elect_load_idle));
@@ -107,7 +109,7 @@ index a6431d8a3681..ae4a474b8170 100644
  	seq_printf(m, "elect_load_used:   %d\n",
  		   atomic_read(&vwh_stat_elect_load_used));
  	return 0;
-@@ -7980,6 +8005,7 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+@@ -7980,6 +8007,7 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
  	atomic_set(&vwh_stat_elect_cost_local, 0);
  	atomic_set(&vwh_stat_elect_cost_any, 0);
  	atomic_set(&vwh_stat_elect_load_idle, 0);

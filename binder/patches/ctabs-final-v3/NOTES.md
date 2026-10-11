@@ -12,7 +12,7 @@ two new patches.
 | # | Commit | Subject | Tree |
 |---|---|---|---|
 | 13 | `b8fa06bc52f12b0215c0e92c792d8dbeee43699d` | sched: strip the handoff admission guard (upstream predicate only) | `60e1855f1e5e539530be9906b3ca1ea796b72939` |
-| 14 | `c1fdc4573b326e2c33fbb006d9e87cbb759685f1` | binder: extend load-aware election (elect_load=2/3) | `2623307fbc69f556c48a7bd2308c8c8d8918b975` |
+| 14 | `d64a0b93071ef56787dc837c088c2d96ee9bf097` | binder: extend load-aware election (elect_load=2/3) | `725ba6e311b979fe2e8b898860a9e2b1e8e5a0cf` |
 
 ## What changed
 
@@ -36,25 +36,32 @@ two new patches.
   is not callable from binder.c** (static inline in fair.c), so 3 uses the
   existing helper; this keeps 0014 confined to binder.c.
 - New counter `elect_load_idle_near` in `stats` and `reset`.
-- Diffstat: `drivers/android/binder.c` 31+/5-.
+- Clusterless kernels (`caller_cluster < 0`: no `CONFIG_SCHED_CLUSTER` and no DT
+  cpu-map): every idle candidate counts as near, so 2/3 keep electing instead of
+  vetoing every pick (single-cluster semantics). Behavior on the device (which
+  reports cluster info) is unchanged.
+- Diffstat: `drivers/android/binder.c` 33+/5-.
 
 ## Apply-test (index-only; Windows NTFS worktree)
 
 `git apply --cached --check` + `git apply --cached` + commit on a temp branch
-from `sel-b-load`, then tree-hash compare:
+from `sel-b-load`, then tree-hash compare (re-run 2026-10-11 for the clusterless
+fix, via a temporary index; scratch branch kept as `scratch-apply-0014`, tip
+`c48bad4751dce326f0597048c680d8e2d29d1e54`):
 
 | Step | Tree hash | Result |
 |---|---|---|
 | before (12 patches, 4a6ac55) | `85b746eb39a762507635c70e871481b2be5515a6` | — |
 | +0013 | `60e1855f1e5e539530be9906b3ca1ea796b72939` | == commit tree; `--check` rc 0 |
-| +0014 | `2623307fbc69f556c48a7bd2308c8c8d8918b975` | == commit tree; `--check` rc 0 |
-| `git diff-tree sel-b-load2 HEAD` | — | empty |
+| +0014 | `725ba6e311b979fe2e8b898860a9e2b1e8e5a0cf` | == commit tree; `--check` rc 0 |
+| combined on 266f523 | `725ba6e311b979fe2e8b898860a9e2b1e8e5a0cf` | == 14p tree; `--check` rc 0 |
+| `git diff-tree sel-b-load2 scratch-apply-0014` | — | empty |
 
 SHA256 of the staging copies:
 - `0013-sched-strip-handoff-admission-guard.patch` =
   `3AA301E5493758C4B953705835016CC297E9CC045DD6AF10A66414C436988B52`
 - `0014-binder-elect-load-2-3.patch` =
-  `CAD52D673A977DD54CF880659260CB04E319B7564FC644497EB5F54FA2B56A5D`
+  `CEA951A79190CEDE259C890E47E4DF14B888C8977375D1E5876F040697FAB7CF`
 
 ## Verify at build time
 
