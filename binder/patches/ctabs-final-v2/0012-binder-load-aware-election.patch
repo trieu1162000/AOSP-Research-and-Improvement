@@ -1,0 +1,148 @@
+From 4a6ac55b4896259a62f732fa63266b12f72eb917 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Sun, 11 Oct 2026 09:38:30 +0700
+Subject: [PATCH] binder: load-aware wakee election (B-arm, idle-first)
+
+---
+ drivers/android/binder.c | 52 ++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index b45ad40ddd21..3e6ca91d3c37 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -814,6 +814,7 @@ static unsigned int vwh_score_decay __read_mostly = 4;
+ static unsigned int vwh_nodrag __read_mostly;
+ static unsigned int vwh_elect_rand __read_mostly;
+ static unsigned int vwh_elect_cost __read_mostly;
++static unsigned int vwh_elect_load __read_mostly;	/* B-arm: idle-first */
+ 
+ static atomic_t vwh_stat_nodrag_used = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_nodrag_ordinary = ATOMIC_INIT(0);
+@@ -821,6 +822,8 @@ static atomic_t vwh_stat_elect_rand_used = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_cost_used = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_cost_local = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_cost_any = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_load_idle = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_load_used = ATOMIC_INIT(0);
+ 
+ #define VWH_COST_MIG_SAME	0
+ #define VWH_COST_MIG_CLUSTER	3000
+@@ -1075,6 +1078,36 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		}
+ 	}
+ 
++	/* load-aware (B-arm): prefer a waiter whose CPU is currently idle */
++	if (READ_ONCE(vwh_elect_load)) {
++		struct binder_thread *idle_any = NULL, *idle_near = NULL;
++		unsigned int ni = 0;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			int wcpu = READ_ONCE(thread->vwh_last_cpu);
++
++			if (wcpu < 0 || !available_idle_cpu(wcpu))
++				continue;
++			if (READ_ONCE(vwh_elect_rand)) {
++				if (get_random_u32_below(++ni) == 0)
++					idle_any = thread;
++				continue;
++			}
++			if (!idle_any)
++				idle_any = thread;
++			if (!idle_near && caller_cluster >= 0 &&
++			    topology_cluster_id(wcpu) == caller_cluster)
++				idle_near = thread;
++		}
++		if (idle_near || idle_any) {
++			atomic_inc(&vwh_stat_elect_load_idle);
++			atomic_inc(&vwh_stat_elect_load_used);
++			return vwh_take_thread(idle_near ? idle_near : idle_any);
++		}
++		/* no idle waiter -> fall through to same-CPU */
++	}
++
+ 	/* modes 2-6: same CPU (MRU from mode 5), then same cluster. */
+ 	if (vwh_mode <= 6) {
+ 		u64 best_served = 0;
+@@ -1106,11 +1139,15 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		if (best && READ_ONCE(vwh_elect_rand)) {
+ 			atomic_inc(&vwh_stat_elected);
+ 			atomic_inc(&vwh_stat_elect_rand_used);
++			if (READ_ONCE(vwh_elect_load))
++				atomic_inc(&vwh_stat_elect_load_used);
+ 			best = vwh_take_thread(best);
+ 			goto out;
+ 		}
+ 		if (best) {
+ 			atomic_inc(&vwh_stat_elected);
++			if (READ_ONCE(vwh_elect_load))
++				atomic_inc(&vwh_stat_elect_load_used);
+ 			best = vwh_take_thread(best);
+ 			goto out;
+ 		}
+@@ -1130,12 +1167,16 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 					continue;
+ 				}
+ 				atomic_inc(&vwh_stat_elected_cluster);
++				if (READ_ONCE(vwh_elect_load))
++					atomic_inc(&vwh_stat_elect_load_used);
+ 				best = vwh_take_thread(thread);
+ 				goto out;
+ 			}
+ 			if (best) {
+ 				atomic_inc(&vwh_stat_elected_cluster);
+ 				atomic_inc(&vwh_stat_elect_rand_used);
++				if (READ_ONCE(vwh_elect_load))
++					atomic_inc(&vwh_stat_elect_load_used);
+ 				best = vwh_take_thread(best);
+ 				goto out;
+ 			}
+@@ -1177,6 +1218,8 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		}
+ 		atomic_inc(&vwh_stat_nodrag_ordinary);
+ 	}
++	if (READ_ONCE(vwh_elect_load))
++		atomic_inc(&vwh_stat_elect_load_used);
+ 	atomic_inc(&vwh_stat_elect_fallback);
+ 	return NULL;
+ out:
+@@ -7894,12 +7937,17 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "nodrag:            %u\n", vwh_nodrag);
+ 	seq_printf(m, "elect_rand:        %u\n", vwh_elect_rand);
+ 	seq_printf(m, "elect_cost:        %u\n", vwh_elect_cost);
++	seq_printf(m, "elect_load:        %u\n", vwh_elect_load);
+ 	seq_printf(m, "nodrag_used:       %d\n", atomic_read(&vwh_stat_nodrag_used));
+ 	seq_printf(m, "nodrag_ordinary:   %d\n", atomic_read(&vwh_stat_nodrag_ordinary));
+ 	seq_printf(m, "elect_rand_used:   %d\n", atomic_read(&vwh_stat_elect_rand_used));
+ 	seq_printf(m, "elect_cost_used:   %d\n", atomic_read(&vwh_stat_elect_cost_used));
+ 	seq_printf(m, "elect_cost_local:  %d\n", atomic_read(&vwh_stat_elect_cost_local));
+ 	seq_printf(m, "elect_cost_any:    %d\n", atomic_read(&vwh_stat_elect_cost_any));
++	seq_printf(m, "elect_load_idle:   %d\n",
++		   atomic_read(&vwh_stat_elect_load_idle));
++	seq_printf(m, "elect_load_used:   %d\n",
++		   atomic_read(&vwh_stat_elect_load_used));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7934,6 +7982,8 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_elect_cost_used, 0);
+ 	atomic_set(&vwh_stat_elect_cost_local, 0);
+ 	atomic_set(&vwh_stat_elect_cost_any, 0);
++	atomic_set(&vwh_stat_elect_load_idle, 0);
++	atomic_set(&vwh_stat_elect_load_used, 0);
+ 	return count;
+ }
+ 
+@@ -8070,6 +8120,8 @@ static int __init binder_init(void)
+ 					   &vwh_elect_rand);
+ 			debugfs_create_u32("elect_cost", 0644, ctabs_dir,
+ 					   &vwh_elect_cost);
++			debugfs_create_u32("elect_load", 0644, ctabs_dir,
++					   &vwh_elect_load);
+ 			debugfs_create_u32("mode", 0644, ctabs_dir,
+ 					   &vwh_mode);
+ 			debugfs_create_u32("sis_current", 0644, ctabs_dir,
+-- 
+2.54.0.windows.1
+

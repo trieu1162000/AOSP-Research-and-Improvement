@@ -1,0 +1,322 @@
+From 5341d71bb47977bd9d348f1564a521ad35849646 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Fri, 9 Oct 2026 00:31:19 +0700
+Subject: [PATCH] sched/binder: defer two-way request wake until commit (BCH)
+
+Block-committed handoff (BCH) for synchronous two-way Binder requests. Instead of waking the elected server thread at request time, mark its wakeup deferred and re-link it on the proc waiting list; the caller commits the handoff in binder_wait_for_work() when it enters the wait path, waking the thread with WF_SYNC|WF_CURRENT_CPU.
+
+A per-thread hrtimer (defer_window_us) expires into an ordinary wake, so no wake is ever lost and added delay is bounded. Commit and expiry find the target by id under the target proc inner lock; a released target is handled by binder_release_work() (BR_DEAD_REPLY). The caller holds one proc tmp_ref, released when it commits from the wait path or from thread release.
+
+Request direction only; the reply direction stays on the legacy path. Knobs: binder/ctabs/{handoff_defer,defer_window_us}; counters bch_armed/bch_commit/bch_expire/bch_gone. Off by default.
+---
+ drivers/android/binder.c          | 160 +++++++++++++++++++++++++++++-
+ drivers/android/binder_internal.h |  10 ++
+ 2 files changed, 167 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 5248be01b314..f777817f9ac5 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -55,6 +55,7 @@
+ #include <linux/debugfs.h>
+ #include <linux/rbtree.h>
+ #include <linux/arch_topology.h>
++#include <linux/hrtimer.h>
+ #include <linux/ktime.h>
+ #include <linux/sched.h>
+ #include <linux/sched/signal.h>
+@@ -107,6 +108,19 @@ static atomic_t binder_last_id;
+ #define VWH_HANDOFF_REPLY	BIT(1)
+ static unsigned int vwh_handoff __read_mostly;
+ 
++/*
++ * BCH (block-committed handoff): defer the two-way request wake until the
++ * caller commits to block in binder_wait_for_work(), or until the per-thread
++ * timer expires (defer_window_us).
++ */
++static unsigned int vwh_handoff_defer __read_mostly;
++static unsigned int vwh_defer_window_us __read_mostly = 100;
++static atomic64_t vwh_bch_gen = ATOMIC64_INIT(0);
++static atomic_t vwh_stat_bch_armed = ATOMIC_INIT(0);
++static atomic_t vwh_stat_bch_commit = ATOMIC_INIT(0);
++static atomic_t vwh_stat_bch_expire = ATOMIC_INIT(0);
++static atomic_t vwh_stat_bch_gone = ATOMIC_INIT(0);
++
+ static atomic_t vwh_stat_handoff_txn = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_handoff_reply = ATOMIC_INIT(0);
+ /* wakee resumed on the CPU the handoff targeted / somewhere else */
+@@ -679,6 +693,98 @@ static void vwh_wake_handoff(struct binder_thread *thread, int dir)
+ 	wake_up_interruptible_sync_on_current_cpu(&thread->wait);
+ }
+ 
++/*
++ * BCH: defer the two-way request wake until the caller commits to block in
++ * binder_wait_for_work(), or until the per-thread hrtimer expires.  The
++ * target stays asleep; commit/expiry find it by id on its proc's waiting
++ * list under @proc->inner_lock, so no reference on the target thread is
++ * needed -- a released thread is handled by binder_release_work()
++ * (BR_DEAD_REPLY to the caller).  The caller holds a proc tmp_ref across the
++ * window.
++ */
++static void binder_proc_dec_tmpref(struct binder_proc *proc);
++
++static enum hrtimer_restart vwh_bch_timer_fn(struct hrtimer *timer)
++{
++	struct binder_thread *t = container_of(timer, struct binder_thread,
++					       vwh_bch_timer);
++
++	if (READ_ONCE(t->vwh_bch_defer_active)) {
++		WRITE_ONCE(t->vwh_bch_defer_active, false);
++		atomic_inc(&vwh_stat_bch_expire);
++		wake_up_interruptible(&t->wait);
++	}
++	return HRTIMER_NORESTART;
++}
++
++/* Called with @t->proc->inner_lock held (by binder_wakeup_thread_ilocked). */
++static bool vwh_bch_defer_wake_locked(struct binder_thread *t,
++				      struct binder_thread *from)
++{
++	unsigned int win = READ_ONCE(vwh_defer_window_us);
++	u64 id;
++
++	if (!READ_ONCE(vwh_handoff_defer) || !win || !from)
++		return false;
++	/* one deferral per target; a second wake is delivered immediately */
++	if (!list_empty(&t->waiting_thread_node))
++		return false;
++	/* one outstanding deferral per caller (one tmpref, released once) */
++	if (READ_ONCE(from->vwh_bch_active))
++		return false;
++
++	id = atomic64_inc_return(&vwh_bch_gen);
++	t->proc->tmp_ref++;
++	WRITE_ONCE(from->vwh_bch_tproc, t->proc);
++	WRITE_ONCE(from->vwh_bch_id, id);
++	WRITE_ONCE(from->vwh_bch_active, true);
++	WRITE_ONCE(t->vwh_bch_defer_id, id);
++	WRITE_ONCE(t->vwh_bch_defer_cpu, raw_smp_processor_id());
++	WRITE_ONCE(t->vwh_bch_defer_active, true);
++	list_add(&t->waiting_thread_node, &t->proc->waiting_threads);
++	hrtimer_start(&t->vwh_bch_timer,
++		      ns_to_ktime((u64)win * NSEC_PER_USEC), HRTIMER_MODE_REL);
++	atomic_inc(&vwh_stat_bch_armed);
++	return true;
++}
++
++/* Called from binder_wait_for_work() with no locks held. */
++static void vwh_bch_commit(struct binder_thread *thread)
++{
++	struct binder_proc *tproc = READ_ONCE(thread->vwh_bch_tproc);
++	u64 id = READ_ONCE(thread->vwh_bch_id);
++	struct binder_thread *t;
++	bool found = false;
++
++	if (!READ_ONCE(thread->vwh_bch_active) || !tproc)
++		return;
++
++	WRITE_ONCE(thread->vwh_bch_active, false);
++	WRITE_ONCE(thread->vwh_bch_tproc, NULL);
++
++	binder_inner_proc_lock(tproc);
++	list_for_each_entry(t, &tproc->waiting_threads,
++			    waiting_thread_node) {
++		if (READ_ONCE(t->vwh_bch_defer_active) &&
++		    READ_ONCE(t->vwh_bch_defer_id) == id) {
++			list_del_init(&t->waiting_thread_node);
++			hrtimer_try_to_cancel(&t->vwh_bch_timer);
++			WRITE_ONCE(t->vwh_bch_defer_active, false);
++			WRITE_ONCE(t->vwh_expect_cpu,
++				   raw_smp_processor_id());
++			WRITE_ONCE(t->vwh_expect_dir, VWH_HANDOFF_TXN);
++			wake_up_interruptible_sync_on_current_cpu(&t->wait);
++			atomic_inc(&vwh_stat_bch_commit);
++			found = true;
++			break;
++		}
++	}
++	binder_inner_proc_unlock(tproc);
++	binder_proc_dec_tmpref(tproc);
++	if (!found)
++		atomic_inc(&vwh_stat_bch_gone);
++}
++
+ /*
+  * VWH election bookkeeping (modes 4-7): per-caller sticky worker,
+  * per-waiter timestamps and the learned handoff score.  The tuning
+@@ -904,6 +1010,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+  */
+ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
+ 					 struct binder_thread *thread,
++					 struct binder_thread *from,
+ 					 bool sync)
+ {
+ 	assert_spin_locked(&proc->inner_lock);
+@@ -912,7 +1019,8 @@ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
+ 		trace_android_vh_binder_wakeup_ilocked(thread->task, sync, proc);
+ 		if (sync && (READ_ONCE(vwh_handoff) & VWH_HANDOFF_TXN)) {
+ 			atomic_inc(&vwh_stat_handoff_txn);
+-			vwh_wake_handoff(thread, VWH_HANDOFF_TXN);
++			if (!vwh_bch_defer_wake_locked(thread, from))
++				vwh_wake_handoff(thread, VWH_HANDOFF_TXN);
+ 		} else if (sync && READ_ONCE(vwh_musched_lite)) {
+ 			int t = sched_pick_vip_cpu(thread->task);
+ 
+@@ -951,7 +1059,7 @@ static void binder_wakeup_proc_ilocked(struct binder_proc *proc)
+ {
+ 	struct binder_thread *thread = binder_select_thread_ilocked(proc);
+ 
+-	binder_wakeup_thread_ilocked(proc, thread, /* sync = */false);
++	binder_wakeup_thread_ilocked(proc, thread, NULL, /* sync = */false);
+ }
+ 
+ static bool is_rt_policy(int policy)
+@@ -3383,7 +3491,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	trace_android_vh_binder_proc_transaction_finish(proc, t,
+ 		thread ? thread->task : NULL, pending_async, !oneway);
+ 	if (!pending_async)
+-		binder_wakeup_thread_ilocked(proc, thread, !oneway /* sync */);
++		binder_wakeup_thread_ilocked(proc, thread, t->from, !oneway /* sync */);
+ 
+ 	proc->outstanding_txns++;
+ 	binder_inner_proc_unlock(proc);
+@@ -5084,16 +5192,31 @@ static int binder_wait_for_work(struct binder_thread *thread,
+ {
+ 	DEFINE_WAIT(wait);
+ 	struct binder_proc *proc = thread->proc;
++	bool bch_committed = false;
+ 	int ret = 0;
+ 
+ 	binder_inner_proc_lock(proc);
+ 	for (;;) {
++		/*
++		 * BCH: the caller has entered the wait path -- commit (or
++		 * release) the deferred handoff for the two-way request it
++		 * owns exactly once.  The proc lock is dropped because the
++		 * target lives in another proc.
++		 */
++		if (!bch_committed) {
++			bch_committed = true;
++			binder_inner_proc_unlock(proc);
++			vwh_bch_commit(thread);
++			binder_inner_proc_lock(proc);
++		}
+ 		prepare_to_wait(&thread->wait, &wait, TASK_INTERRUPTIBLE|TASK_FREEZABLE);
+ 		if (binder_has_work_ilocked(thread, do_proc_work))
+ 			break;
+ 		if (do_proc_work) {
+ 			WRITE_ONCE(thread->vwh_last_cpu, raw_smp_processor_id());
+ 			WRITE_ONCE(thread->vwh_wait_ns, ktime_get_ns());
++			/* idempotent: a deferred wake may have linked us */
++			list_del_init(&thread->waiting_thread_node);
+ 			list_add(&thread->waiting_thread_node,
+ 				 &proc->waiting_threads);
+ 		}
+@@ -5743,6 +5866,15 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	thread->vwh_served_ns = 0;
+ 	thread->vwh_wait_ns = 0;
+ 	thread->vwh_score = 0;
++	hrtimer_init(&thread->vwh_bch_timer, CLOCK_MONOTONIC,
++		     HRTIMER_MODE_REL);
++	thread->vwh_bch_timer.function = vwh_bch_timer_fn;
++	thread->vwh_bch_tproc = NULL;
++	thread->vwh_bch_id = 0;
++	thread->vwh_bch_active = false;
++	thread->vwh_bch_defer_id = 0;
++	thread->vwh_bch_defer_cpu = -1;
++	thread->vwh_bch_defer_active = false;
+ 	INIT_LIST_HEAD(&new_thread->waiting_thread_node);
+ 	return thread;
+ }
+@@ -5794,6 +5926,8 @@ static void binder_free_proc(struct binder_proc *proc)
+ static void binder_free_thread(struct binder_thread *thread)
+ {
+ 	BUG_ON(!list_empty(&thread->todo));
++	/* BCH: no timer callback may outlive the thread */
++	hrtimer_cancel(&thread->vwh_bch_timer);
+ 	binder_stats_deleted(BINDER_STAT_THREAD);
+ 	binder_proc_dec_tmpref(thread->proc);
+ 	put_task_struct(thread->task);
+@@ -5831,6 +5965,9 @@ static int binder_thread_release(struct binder_proc *proc,
+ 		__acquire(&t->lock);
+ 	}
+ 	thread->is_dead = true;
++	/* BCH: stop commit/expiry from finding a released thread */
++	list_del_init(&thread->waiting_thread_node);
++	WRITE_ONCE(thread->vwh_bch_defer_active, false);
+ 
+ 	while (t) {
+ 		last_t = t;
+@@ -5873,6 +6010,9 @@ static int binder_thread_release(struct binder_proc *proc,
+ 
+ 	binder_inner_proc_unlock(thread->proc);
+ 
++	/* BCH: release a deferred wake this thread owns, if any */
++	vwh_bch_commit(thread);
++
+ 	/*
+ 	 * This is needed to avoid races between wake_up_pollfree() above and
+ 	 * someone else removing the last entry from the queue for other reasons
+@@ -7536,6 +7676,12 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "sis_rvh:           %d\n", atomic_read(&vwh_stat_sis_rvh));
+ 	seq_printf(m, "musched_lite:      %u\n", vwh_musched_lite);
+ 	seq_printf(m, "musched_lite_wakes:%d\n", atomic_read(&vwh_stat_musched_lite));
++	seq_printf(m, "handoff_defer:     %u\n", vwh_handoff_defer);
++	seq_printf(m, "defer_window_us:   %u\n", vwh_defer_window_us);
++	seq_printf(m, "bch_armed:         %d\n", atomic_read(&vwh_stat_bch_armed));
++	seq_printf(m, "bch_commit:        %d\n", atomic_read(&vwh_stat_bch_commit));
++	seq_printf(m, "bch_expire:        %d\n", atomic_read(&vwh_stat_bch_expire));
++	seq_printf(m, "bch_gone:          %d\n", atomic_read(&vwh_stat_bch_gone));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7560,6 +7706,10 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_sis_hits, 0);
+ 	atomic_set(&vwh_stat_sis_rvh, 0);
+ 	atomic_set(&vwh_stat_musched_lite, 0);
++	atomic_set(&vwh_stat_bch_armed, 0);
++	atomic_set(&vwh_stat_bch_commit, 0);
++	atomic_set(&vwh_stat_bch_expire, 0);
++	atomic_set(&vwh_stat_bch_gone, 0);
+ 	return count;
+ }
+ 
+@@ -7686,6 +7836,10 @@ static int __init binder_init(void)
+ 					   &vwh_handoff);
+ 			debugfs_create_u32("handoff_guard", 0644, ctabs_dir,
+ 					   &handoff_guard);
++			debugfs_create_u32("handoff_defer", 0644, ctabs_dir,
++					   &vwh_handoff_defer);
++			debugfs_create_u32("defer_window_us", 0644, ctabs_dir,
++					   &vwh_defer_window_us);
+ 			debugfs_create_u32("mode", 0644, ctabs_dir,
+ 					   &vwh_mode);
+ 			debugfs_create_u32("sis_current", 0644, ctabs_dir,
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 2c895c755e5f..362428b026a2 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -5,6 +5,7 @@
+ 
+ #include <linux/export.h>
+ #include <linux/fs.h>
++#include <linux/hrtimer.h>
+ #include <linux/list.h>
+ #include <linux/miscdevice.h>
+ #include <linux/mutex.h>
+@@ -624,6 +625,15 @@ struct binder_thread {
+ 	u64 vwh_served_ns;
+ 	u64 vwh_wait_ns;
+ 	int vwh_score;
++	/* BCH: deferred two-way request wake owned by this thread (caller) */
++	struct binder_proc *vwh_bch_tproc;
++	u64 vwh_bch_id;
++	bool vwh_bch_active;
++	/* BCH: this thread's wakeup is deferred (target side) */
++	struct hrtimer vwh_bch_timer;
++	u64 vwh_bch_defer_id;
++	int vwh_bch_defer_cpu;
++	bool vwh_bch_defer_active;
+ 	spinlock_t prio_lock;
+ 	struct binder_priority prio_next;
+ 	enum binder_prio_state prio_state;

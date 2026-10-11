@@ -1,0 +1,32 @@
+From afc5c09a2c58420e56c54650fb6e60aa23a8521f Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Sat, 10 Oct 2026 12:09:19 +0700
+Subject: [PATCH] sched: require an idle target at wake time for WF_TARGET_CPU
+
+The no-drag path validates idle+fits when electing the target CPU, but that state can change before the wake runs: an explicit WF_TARGET_CPU hint on a CPU that became busy queues the wakee behind it and spikes p99 (measured on the Pi/KVM lab: +12us p99, -2% tput for the P arm vs drag).  Re-check available_idle_cpu() at wake time and fall through to the normal placement path when the target is no longer idle.
+---
+ kernel/sched/fair.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index cf6b40ed2b96..cda2cadea85e 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7719,8 +7719,16 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 		int t = READ_ONCE(p->recent_used_cpu);
+ 
+ 		WRITE_ONCE(p->recent_used_cpu, prev_cpu);
++		/*
++		 * Re-validate idleness at wake time: the producer checked it
++		 * when electing the target, but the CPU may have become busy
++		 * since (no-drag race).  If it is no longer idle, fall
++		 * through to the normal placement path instead of queueing
++		 * the wakee behind a busy target.
++		 */
+ 		if ((unsigned int)t < nr_cpu_ids && cpu_online(t) &&
+-		    cpumask_test_cpu(t, p->cpus_ptr) && task_fits_cpu(p, t))
++		    cpumask_test_cpu(t, p->cpus_ptr) && task_fits_cpu(p, t) &&
++		    available_idle_cpu(t))
+ 			return t;
+ 	}
+ 

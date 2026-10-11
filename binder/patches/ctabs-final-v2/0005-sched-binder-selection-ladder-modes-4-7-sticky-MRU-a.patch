@@ -1,0 +1,352 @@
+From 29fd0219ac138689462a91089c79404676219127 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Thu, 8 Oct 2026 23:06:11 +0700
+Subject: [PATCH] sched/binder: selection ladder modes 4-7 (sticky, MRU, aging,
+ learned)
+
+Extend the same-CPU/topology election with the runtime-selectable rungs:
+
+  mode 4: the caller's sticky worker comes first (per-client pairing)
+  mode 5: most recently served local waiter (MRU among same-CPU waiters)
+  mode 6: aging guard - a waiter past VWH_AGE_NS wins outright (bounds
+          starvation under sticky/MRU policies)
+  mode 7: learned score on top of topology and age, updated from the
+          handoff landing outcome (land = +, miss = -, with decay)
+
+Bookkeeping stays inside binder_thread (private, KMI-safe): a sticky
+pointer on the caller, served/wait timestamps and an integer score per
+waiter.  New counters: elected_sticky, elected_age.
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c          | 196 +++++++++++++++++++++++++++---
+ drivers/android/binder_internal.h |   8 ++
+ 2 files changed, 184 insertions(+), 20 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index f52f19b9bb06..9e758650d41c 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -55,6 +55,7 @@
+ #include <linux/debugfs.h>
+ #include <linux/rbtree.h>
+ #include <linux/arch_topology.h>
++#include <linux/ktime.h>
+ #include <linux/sched/signal.h>
+ #include <linux/sched/mm.h>
+ #include <linux/seq_file.h>
+@@ -668,17 +669,35 @@ static void vwh_wake_handoff(struct binder_thread *thread, int dir)
+ 	wake_up_interruptible_sync_on_current_cpu(&thread->wait);
+ }
+ 
++/*
++ * VWH election bookkeeping (modes 4-7): per-caller sticky worker,
++ * per-waiter timestamps and the learned handoff score.  The tuning
++ * parameters are runtime knobs under binder/ctabs/ so policy can be
++ * swept without a rebuild.
++ */
++#define VWH_SCORE_MIN		(-256)
++#define VWH_SCORE_MAX		768
++
++static unsigned int vwh_mode __read_mostly;
++static unsigned int vwh_age_ms __read_mostly = 2;	/* 0 = aging off */
++static unsigned int vwh_score_local __read_mostly = 1024;
++static unsigned int vwh_score_cluster __read_mostly = 512;
++static unsigned int vwh_score_step __read_mostly = 64;
++static unsigned int vwh_score_decay __read_mostly = 4;
++
+ /* Called by a woken thread: did it resume where the handoff targeted? */
+ static void vwh_note_landing(struct binder_thread *thread)
+ {
+ 	int exp = READ_ONCE(thread->vwh_expect_cpu);
+ 	int dir = READ_ONCE(thread->vwh_expect_dir);
++	bool landed;
+ 
+ 	if (exp < 0)
+ 		return;
+ 	WRITE_ONCE(thread->vwh_expect_cpu, -1);
+ 	WRITE_ONCE(thread->vwh_expect_dir, 0);
+-	if (raw_smp_processor_id() == exp) {
++	landed = raw_smp_processor_id() == exp;
++	if (landed) {
+ 		atomic_inc(&vwh_stat_handoff_land);
+ 		if (dir == VWH_HANDOFF_REPLY)
+ 			atomic_inc(&vwh_stat_handoff_reply_land);
+@@ -691,50 +710,159 @@ static void vwh_note_landing(struct binder_thread *thread)
+ 		else
+ 			atomic_inc(&vwh_stat_handoff_txn_miss);
+ 	}
++
++	/* mode 7: score the wakee on the handoff outcome. */
++	if (READ_ONCE(vwh_mode) >= 7) {
++		unsigned int decay = min_t(unsigned int,
++					   READ_ONCE(vwh_score_decay), 16);
++		int step = READ_ONCE(vwh_score_step);
++		int score = READ_ONCE(thread->vwh_score);
++
++		score -= score >> decay;
++		score += landed ? step : -step;
++		score = clamp(score, VWH_SCORE_MIN, VWH_SCORE_MAX);
++		WRITE_ONCE(thread->vwh_score, score);
++	}
+ }
+ 
+ /*
+  * VWH election: 0 keeps the stock FIFO pick; 2 prefers the waiting thread
+  * whose last CPU is the waker's CPU (a cache-warm worker) for synchronous
+- * transactions; 3 additionally falls back to a waiter on the waker's
+- * cluster before giving up to FIFO (the pre-handoff topology selector).
++ * transactions; 3 adds a same-cluster fallback before FIFO; 4 tries the
++ * caller's sticky worker first; 5 picks the most recently served local
++ * waiter; 6 adds an aging guard so a waiter past VWH_AGE_NS wins; 7 ranks
++ * candidates with a learned score on top of topology and age.
+  * The elected thread is removed from the waiting list like the stock
+  * selector does, so wakeup ownership is unchanged.
+  */
+-static unsigned int vwh_mode __read_mostly;
+ static atomic_t vwh_stat_elected = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elected_cluster = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elected_sticky = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elected_age = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_fallback = ATOMIC_INIT(0);
+ 
+-static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
++static struct binder_thread *vwh_take_thread(struct binder_thread *thread)
+ {
+-	struct binder_thread *thread;
++	list_del_init(&thread->waiting_thread_node);
++	WRITE_ONCE(thread->vwh_served_ns, ktime_get_ns());
++	return thread;
++}
++
++static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
++					      struct binder_thread *caller)
++{
++	struct binder_thread *thread, *best = NULL;
+ 	int caller_cpu = raw_smp_processor_id();
++	int caller_cluster;
++	u64 now = ktime_get_ns();
+ 
+-	if (vwh_mode != 2 && vwh_mode != 3)
++	if (vwh_mode < 2 || vwh_mode > 7)
+ 		return NULL;
+ 
+-	list_for_each_entry(thread, &proc->waiting_threads, waiting_thread_node) {
+-		if (READ_ONCE(thread->vwh_last_cpu) == caller_cpu) {
+-			list_del_init(&thread->waiting_thread_node);
++	caller_cluster = topology_cluster_id(caller_cpu);
++
++	/* modes 4-7: the caller's own sticky worker comes first. */
++	if (vwh_mode >= 4 && caller && caller->vwh_sticky) {
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			if (thread == caller->vwh_sticky &&
++			    READ_ONCE(thread->vwh_last_cpu) == caller_cpu) {
++				atomic_inc(&vwh_stat_elected_sticky);
++				best = vwh_take_thread(thread);
++				goto out;
++			}
++		}
++	}
++
++	/* modes 6-7: a waiter past VWH_AGE_NS wins outright (LAS guard). */
++	if (vwh_mode >= 6) {
++		u64 age_ns = (u64)READ_ONCE(vwh_age_ms) * NSEC_PER_MSEC;
++		u64 oldest = now;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			u64 wait = READ_ONCE(thread->vwh_wait_ns);
++
++			if (wait && wait < oldest) {
++				oldest = wait;
++				best = thread;
++			}
++		}
++		if (age_ns && best && now - oldest > age_ns) {
++			atomic_inc(&vwh_stat_elected_age);
++			best = vwh_take_thread(best);
++			goto out;
++		}
++		best = NULL;
++	}
++
++	/* mode 7: rank candidates by topology + learned score + age. */
++	if (vwh_mode >= 7) {
++		int best_score = INT_MIN;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			int wcpu = READ_ONCE(thread->vwh_last_cpu);
++			int score = READ_ONCE(thread->vwh_score);
++			u64 wait = READ_ONCE(thread->vwh_wait_ns);
++
++			if (wcpu == caller_cpu)
++				score += READ_ONCE(vwh_score_local);
++			else if (caller_cluster >= 0 && wcpu >= 0 &&
++				 topology_cluster_id(wcpu) == caller_cluster)
++				score += READ_ONCE(vwh_score_cluster);
++			if (wait)
++				score += min_t(u64, (now - wait) >> 20, 256);
++			if (score > best_score) {
++				best_score = score;
++				best = thread;
++			}
++		}
++		if (best) {
+ 			atomic_inc(&vwh_stat_elected);
+-			return thread;
++			best = vwh_take_thread(best);
++			goto out;
+ 		}
+ 	}
+ 
+-	if (vwh_mode == 3) {
+-		int caller_cluster = topology_cluster_id(caller_cpu);
++	/* modes 2-6: same CPU (MRU from mode 5), then same cluster. */
++	if (vwh_mode <= 6) {
++		u64 best_served = 0;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			u64 served;
++			int wcpu = READ_ONCE(thread->vwh_last_cpu);
++
++			if (wcpu != caller_cpu)
++				continue;
++			served = READ_ONCE(thread->vwh_served_ns);
++			if (vwh_mode >= 5) {
++				if (!best || served > best_served) {
++					best = thread;
++					best_served = served;
++				}
++			} else {
++				best = thread;
++				break;
++			}
++		}
++		if (best) {
++			atomic_inc(&vwh_stat_elected);
++			best = vwh_take_thread(best);
++			goto out;
++		}
+ 
+-		if (caller_cluster >= 0) {
++		if (vwh_mode >= 3 && caller_cluster >= 0) {
+ 			list_for_each_entry(thread, &proc->waiting_threads,
+ 					    waiting_thread_node) {
+-				int waiter_cpu = READ_ONCE(thread->vwh_last_cpu);
++				int wcpu = READ_ONCE(thread->vwh_last_cpu);
+ 
+-				if (waiter_cpu >= 0 &&
+-				    topology_cluster_id(waiter_cpu) == caller_cluster) {
+-					list_del_init(&thread->waiting_thread_node);
++				if (wcpu >= 0 &&
++				    topology_cluster_id(wcpu) == caller_cluster) {
+ 					atomic_inc(&vwh_stat_elected_cluster);
+-					return thread;
++					best = vwh_take_thread(thread);
++					goto out;
+ 				}
+ 			}
+ 		}
+@@ -742,6 +870,10 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc)
+ 
+ 	atomic_inc(&vwh_stat_elect_fallback);
+ 	return NULL;
++out:
++	if (vwh_mode >= 4 && caller)
++		WRITE_ONCE(caller->vwh_sticky, best);
++	return best;
+ }
+ 
+ /**
+@@ -3193,7 +3325,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 
+ 	if (!thread && !pending_async && !skip) {
+ 		if (!oneway)
+-			thread = vwh_elect_thread(proc);
++			thread = vwh_elect_thread(proc, t->from);
+ 		if (!thread)
+ 			thread = binder_select_thread_ilocked(proc);
+ 	}
+@@ -4941,6 +5073,7 @@ static int binder_wait_for_work(struct binder_thread *thread,
+ 			break;
+ 		if (do_proc_work) {
+ 			WRITE_ONCE(thread->vwh_last_cpu, raw_smp_processor_id());
++			WRITE_ONCE(thread->vwh_wait_ns, ktime_get_ns());
+ 			list_add(&thread->waiting_thread_node,
+ 				 &proc->waiting_threads);
+ 		}
+@@ -5586,6 +5719,10 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	WRITE_ONCE(thread->vwh_last_cpu, -1);
+ 	WRITE_ONCE(thread->vwh_expect_cpu, -1);
+ 	WRITE_ONCE(thread->vwh_expect_dir, 0);
++	thread->vwh_sticky = NULL;
++	thread->vwh_served_ns = 0;
++	thread->vwh_wait_ns = 0;
++	thread->vwh_score = 0;
+ 	INIT_LIST_HEAD(&new_thread->waiting_thread_node);
+ 	return thread;
+ }
+@@ -7363,8 +7500,15 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "handoff_reply_miss:%d\n", atomic_read(&vwh_stat_handoff_reply_miss));
+ 	seq_printf(m, "handoff_guard:     %u\n", handoff_guard);
+ 	seq_printf(m, "mode:              %u\n", vwh_mode);
++	seq_printf(m, "age_ms:            %u\n", vwh_age_ms);
++	seq_printf(m, "score_local:       %u\n", vwh_score_local);
++	seq_printf(m, "score_cluster:     %u\n", vwh_score_cluster);
++	seq_printf(m, "score_step:        %u\n", vwh_score_step);
++	seq_printf(m, "score_decay:       %u\n", vwh_score_decay);
+ 	seq_printf(m, "elected:           %d\n", atomic_read(&vwh_stat_elected));
+ 	seq_printf(m, "elected_cluster:   %d\n", atomic_read(&vwh_stat_elected_cluster));
++	seq_printf(m, "elected_sticky:    %d\n", atomic_read(&vwh_stat_elected_sticky));
++	seq_printf(m, "elected_age:       %d\n", atomic_read(&vwh_stat_elected_age));
+ 	seq_printf(m, "elect_fallback:    %d\n", atomic_read(&vwh_stat_elect_fallback));
+ 	return 0;
+ }
+@@ -7383,6 +7527,8 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_handoff_reply_miss, 0);
+ 	atomic_set(&vwh_stat_elected, 0);
+ 	atomic_set(&vwh_stat_elected_cluster, 0);
++	atomic_set(&vwh_stat_elected_sticky, 0);
++	atomic_set(&vwh_stat_elected_age, 0);
+ 	atomic_set(&vwh_stat_elect_fallback, 0);
+ 	return count;
+ }
+@@ -7512,6 +7658,16 @@ static int __init binder_init(void)
+ 					   &handoff_guard);
+ 			debugfs_create_u32("mode", 0644, ctabs_dir,
+ 					   &vwh_mode);
++			debugfs_create_u32("age_ms", 0644, ctabs_dir,
++					   &vwh_age_ms);
++			debugfs_create_u32("score_local", 0644, ctabs_dir,
++					   &vwh_score_local);
++			debugfs_create_u32("score_cluster", 0644, ctabs_dir,
++					   &vwh_score_cluster);
++			debugfs_create_u32("score_step", 0644, ctabs_dir,
++					   &vwh_score_step);
++			debugfs_create_u32("score_decay", 0644, ctabs_dir,
++					   &vwh_score_decay);
+ 			debugfs_create_file("stats", 0444, ctabs_dir, NULL,
+ 					    &vwh_stats_fops);
+ 			debugfs_create_file("reset", 0200, ctabs_dir, NULL,
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 4815acd8b169..2c895c755e5f 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -616,6 +616,14 @@ struct binder_thread {
+ 	int vwh_expect_cpu;
+ 	/* VWH: direction of the pending expectation (0 = none) */
+ 	u8 vwh_expect_dir;
++	/*
++	 * VWH election bookkeeping (modes 4-7): caller's sticky worker,
++	 * waiter timestamps and the learned handoff score.
++	 */
++	struct binder_thread *vwh_sticky;
++	u64 vwh_served_ns;
++	u64 vwh_wait_ns;
++	int vwh_score;
+ 	spinlock_t prio_lock;
+ 	struct binder_priority prio_next;
+ 	enum binder_prio_state prio_state;

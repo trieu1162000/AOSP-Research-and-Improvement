@@ -1,0 +1,494 @@
+From 5402cf6df6ee8a9e78d9f2a4fb928ed6818a1b9d Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Sat, 10 Oct 2026 00:14:32 +0700
+Subject: [PATCH] sched/binder: election v2 experimental arms (nodrag, random
+ victim, cost)
+
+All arms off by default. P: no-drag fallback (wake the best remote waiter on its own CPU via WF_TARGET_CPU, idle+fits only). O: random victim within the elected tier. C: lexicographic cost election. Counters for every arm; sticky safety fix (pid instead of pointer); MRU update on the stock path.
+
+Includes the v2.1 cost-election fix found by the v6 smoke: local feasibility mirrors handoff_admit() (affinity/exiting/fits per handoff_guard) and no longer requires an idle caller CPU, which had dropped local elections almost entirely.
+---
+ drivers/android/binder.c          | 260 ++++++++++++++++++++++++++++--
+ drivers/android/binder_internal.h |   2 +-
+ include/linux/sched.h             |   2 +
+ kernel/sched/fair.c               |  44 +++++
+ 4 files changed, 292 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index f777817f9ac5..b45ad40ddd21 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -66,6 +66,7 @@
+ #include <linux/pid_namespace.h>
+ #include <linux/security.h>
+ #include <linux/spinlock.h>
++#include <linux/random.h>
+ #include <linux/ratelimit.h>
+ #include <linux/syscalls.h>
+ #include <linux/task_work.h>
+@@ -801,6 +802,76 @@ static unsigned int vwh_score_cluster __read_mostly = 512;
+ static unsigned int vwh_score_step __read_mostly = 64;
+ static unsigned int vwh_score_decay __read_mostly = 4;
+ 
++/*
++ * VWH election v2 (experimental arms; off by default):
++ *   nodrag     - P arm: no local waiter -> wake the best remote waiter on its
++ *                own CPU (WF_TARGET_CPU) instead of dragging it to the caller.
++ *   elect_rand - O arm: random victim within the elected tier (order-only).
++ *   elect_cost - C arm: lexicographic cost election; a feasible local waiter
++ *                always wins, otherwise rank by cost.  Cost constants are
++ *                arbitrary units until M(src->dst) is measured in ns.
++ */
++static unsigned int vwh_nodrag __read_mostly;
++static unsigned int vwh_elect_rand __read_mostly;
++static unsigned int vwh_elect_cost __read_mostly;
++
++static atomic_t vwh_stat_nodrag_used = ATOMIC_INIT(0);
++static atomic_t vwh_stat_nodrag_ordinary = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_rand_used = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_cost_used = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_cost_local = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_cost_any = ATOMIC_INIT(0);
++
++#define VWH_COST_MIG_SAME	0
++#define VWH_COST_MIG_CLUSTER	3000
++#define VWH_COST_MIG_FAR	9000
++#define VWH_COST_CONG		500
++#define VWH_COST_STICKY		1000
++#define VWH_COST_AGE_SHIFT	20
++#define VWH_COST_AGE_MAX	256
++#define VWH_COST_CAP_SCALE	4
++
++bool sched_handoff_target_ok(struct task_struct *p, int cpu);
++bool sched_handoff_local_ok(struct task_struct *p, int cpu);
++
++static int vwh_cost_score(struct binder_thread *w, struct binder_thread *caller,
++			  int caller_cpu, int caller_cluster, u64 now)
++{
++	int wcpu = READ_ONCE(w->vwh_last_cpu);
++	unsigned long ccap, wcap;
++	int score = 0;
++	u64 wait;
++
++	if (wcpu < 0)
++		return INT_MAX;
++	if (wcpu == caller_cpu)
++		score += VWH_COST_MIG_SAME;
++	else if (caller_cluster >= 0 &&
++		 topology_cluster_id(wcpu) == caller_cluster)
++		score += VWH_COST_MIG_CLUSTER;
++	else
++		score += VWH_COST_MIG_FAR;
++
++	ccap = arch_scale_cpu_capacity(caller_cpu);
++	wcap = arch_scale_cpu_capacity(wcpu);
++	if (ccap > wcap)
++		score += (int)((ccap - wcap) * VWH_COST_CAP_SCALE);
++
++	/* Prefer a waiter whose own CPU could host it right away. */
++	if (!sched_handoff_target_ok(w->task, wcpu))
++		score += VWH_COST_CONG;
++
++	if (caller && READ_ONCE(caller->vwh_sticky_pid) == w->pid)
++		score -= VWH_COST_STICKY;
++
++	wait = READ_ONCE(w->vwh_wait_ns);
++	if (wait && now > wait)
++		score -= min_t(u64, (now - wait) >> VWH_COST_AGE_SHIFT,
++			       VWH_COST_AGE_MAX);
++
++	return score;
++}
++
+ /* Called by a woken thread: did it resume where the handoff targeted? */
+ static void vwh_note_landing(struct binder_thread *thread)
+ {
+@@ -834,7 +905,9 @@ static void vwh_note_landing(struct binder_thread *thread)
+ 		int step = READ_ONCE(vwh_score_step);
+ 		int score = READ_ONCE(thread->vwh_score);
+ 
+-		score -= score >> decay;
++		/* arithmetic shift on a negative score is not portable */
++		score -= (score >= 0) ? (score >> decay)
++				      : -((-score) >> decay);
+ 		score += landed ? step : -step;
+ 		score = clamp(score, VWH_SCORE_MIN, VWH_SCORE_MAX);
+ 		WRITE_ONCE(thread->vwh_score, score);
+@@ -865,23 +938,84 @@ static struct binder_thread *vwh_take_thread(struct binder_thread *thread)
+ }
+ 
+ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+-					      struct binder_thread *caller)
++					      struct binder_thread *caller,
++					      int *wake_target)
+ {
+ 	struct binder_thread *thread, *best = NULL;
+ 	int caller_cpu = raw_smp_processor_id();
+ 	int caller_cluster;
+ 	u64 now = ktime_get_ns();
+ 
++	*wake_target = -1;
++
+ 	if (vwh_mode < 2 || vwh_mode > 7)
+ 		return NULL;
+ 
+ 	caller_cluster = topology_cluster_id(caller_cpu);
+ 
++	/*
++	 * Cost-election arm (C): lexicographic -- a feasible local waiter
++	 * always wins; otherwise rank the remaining waiters by cost.
++	 */
++	if (READ_ONCE(vwh_elect_cost)) {
++		struct binder_thread *local = NULL, *any = NULL;
++		int local_score = INT_MAX, any_score = INT_MAX;
++		u64 local_wait = U64_MAX, any_wait = U64_MAX;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			int wcpu = READ_ONCE(thread->vwh_last_cpu);
++			u64 wait;
++			int score;
++
++			if (wcpu < 0)
++				continue;
++			score = vwh_cost_score(thread, caller, caller_cpu,
++					       caller_cluster, now);
++			wait = READ_ONCE(thread->vwh_wait_ns);
++			if (wcpu == caller_cpu &&
++			    sched_handoff_local_ok(thread->task, caller_cpu) &&
++			    (score < local_score ||
++			     (score == local_score && wait && wait < local_wait))) {
++				local_score = score;
++				local_wait = wait;
++				local = thread;
++			}
++			if (score < any_score ||
++			    (score == any_score && wait && wait < any_wait)) {
++				any_score = score;
++				any_wait = wait;
++				any = thread;
++			}
++		}
++		if (local) {
++			atomic_inc(&vwh_stat_elect_cost_local);
++			atomic_inc(&vwh_stat_elect_cost_used);
++			best = vwh_take_thread(local);
++			goto out;
++		}
++		if (any) {
++			int wcpu = READ_ONCE(any->vwh_last_cpu);
++
++			atomic_inc(&vwh_stat_elect_cost_any);
++			atomic_inc(&vwh_stat_elect_cost_used);
++			best = vwh_take_thread(any);
++			if (READ_ONCE(vwh_nodrag) && wcpu >= 0 &&
++			    wcpu != caller_cpu &&
++			    sched_handoff_target_ok(any->task, wcpu)) {
++				*wake_target = wcpu;
++				atomic_inc(&vwh_stat_nodrag_used);
++			}
++			goto out;
++		}
++		goto fallback;
++	}
++
+ 	/* modes 4-7: the caller's own sticky worker comes first. */
+-	if (vwh_mode >= 4 && caller && caller->vwh_sticky) {
++	if (vwh_mode >= 4 && caller && READ_ONCE(caller->vwh_sticky_pid)) {
+ 		list_for_each_entry(thread, &proc->waiting_threads,
+ 				    waiting_thread_node) {
+-			if (thread == caller->vwh_sticky &&
++			if (thread->pid == READ_ONCE(caller->vwh_sticky_pid) &&
+ 			    READ_ONCE(thread->vwh_last_cpu) == caller_cpu) {
+ 				atomic_inc(&vwh_stat_elected_sticky);
+ 				best = vwh_take_thread(thread);
+@@ -944,6 +1078,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 	/* modes 2-6: same CPU (MRU from mode 5), then same cluster. */
+ 	if (vwh_mode <= 6) {
+ 		u64 best_served = 0;
++		unsigned int n = 0;
+ 
+ 		list_for_each_entry(thread, &proc->waiting_threads,
+ 				    waiting_thread_node) {
+@@ -952,6 +1087,11 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 
+ 			if (wcpu != caller_cpu)
+ 				continue;
++			if (READ_ONCE(vwh_elect_rand)) {
++				if (get_random_u32_below(++n) == 0)
++					best = thread;
++				continue;
++			}
+ 			served = READ_ONCE(thread->vwh_served_ns);
+ 			if (vwh_mode >= 5) {
+ 				if (!best || served > best_served) {
+@@ -963,6 +1103,12 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 				break;
+ 			}
+ 		}
++		if (best && READ_ONCE(vwh_elect_rand)) {
++			atomic_inc(&vwh_stat_elected);
++			atomic_inc(&vwh_stat_elect_rand_used);
++			best = vwh_take_thread(best);
++			goto out;
++		}
+ 		if (best) {
+ 			atomic_inc(&vwh_stat_elected);
+ 			best = vwh_take_thread(best);
+@@ -970,25 +1116,72 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		}
+ 
+ 		if (vwh_mode >= 3 && caller_cluster >= 0) {
++			n = 0;
+ 			list_for_each_entry(thread, &proc->waiting_threads,
+ 					    waiting_thread_node) {
+ 				int wcpu = READ_ONCE(thread->vwh_last_cpu);
+ 
+-				if (wcpu >= 0 &&
+-				    topology_cluster_id(wcpu) == caller_cluster) {
+-					atomic_inc(&vwh_stat_elected_cluster);
+-					best = vwh_take_thread(thread);
+-					goto out;
++				if (wcpu < 0 ||
++				    topology_cluster_id(wcpu) != caller_cluster)
++					continue;
++				if (READ_ONCE(vwh_elect_rand)) {
++					if (get_random_u32_below(++n) == 0)
++						best = thread;
++					continue;
+ 				}
++				atomic_inc(&vwh_stat_elected_cluster);
++				best = vwh_take_thread(thread);
++				goto out;
++			}
++			if (best) {
++				atomic_inc(&vwh_stat_elected_cluster);
++				atomic_inc(&vwh_stat_elect_rand_used);
++				best = vwh_take_thread(best);
++				goto out;
+ 			}
+ 		}
+ 	}
+ 
++fallback:
++	if (READ_ONCE(vwh_nodrag)) {
++		struct binder_thread *rb = NULL;
++		int best_score = INT_MAX, best_cpu = -1;
++		u64 best_served = 0;
++
++		list_for_each_entry(thread, &proc->waiting_threads,
++				    waiting_thread_node) {
++			int wcpu = READ_ONCE(thread->vwh_last_cpu);
++			u64 served;
++			int score;
++
++			if (wcpu < 0 || wcpu == caller_cpu)
++				continue;
++			score = vwh_cost_score(thread, caller, caller_cpu,
++					       caller_cluster, now);
++			served = READ_ONCE(thread->vwh_served_ns);
++			if (score < best_score ||
++			    (score == best_score && served > best_served)) {
++				best_score = score;
++				best_served = served;
++				best_cpu = wcpu;
++				rb = thread;
++			}
++		}
++		if (rb && best_cpu >= 0 &&
++		    sched_handoff_target_ok(rb->task, best_cpu)) {
++			atomic_inc(&vwh_stat_nodrag_used);
++			atomic_inc(&vwh_stat_elect_fallback);
++			best = vwh_take_thread(rb);
++			*wake_target = best_cpu;
++			goto out;
++		}
++		atomic_inc(&vwh_stat_nodrag_ordinary);
++	}
+ 	atomic_inc(&vwh_stat_elect_fallback);
+ 	return NULL;
+ out:
+-	if (vwh_mode >= 4 && caller)
+-		WRITE_ONCE(caller->vwh_sticky, best);
++	if (vwh_mode >= 4 && caller && best)
++		WRITE_ONCE(caller->vwh_sticky_pid, best->pid);
+ 	return best;
+ }
+ 
+@@ -3423,6 +3616,7 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	struct binder_transaction *t_outdated = NULL;
+ 	bool skip = false;
+ 	bool enqueue_task = true;
++	int wake_target = -1;
+ 
+ 	BUG_ON(!node);
+ 	binder_node_lock(node);
+@@ -3453,9 +3647,11 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 
+ 	if (!thread && !pending_async && !skip) {
+ 		if (!oneway)
+-			thread = vwh_elect_thread(proc, t->from);
++			thread = vwh_elect_thread(proc, t->from, &wake_target);
+ 		if (!thread)
+ 			thread = binder_select_thread_ilocked(proc);
++		if (thread)
++			WRITE_ONCE(thread->vwh_served_ns, ktime_get_ns());
+ 	}
+ 
+ 	trace_android_vh_binder_proc_transaction(current, proc->tsk,
+@@ -3490,8 +3686,21 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 
+ 	trace_android_vh_binder_proc_transaction_finish(proc, t,
+ 		thread ? thread->task : NULL, pending_async, !oneway);
+-	if (!pending_async)
+-		binder_wakeup_thread_ilocked(proc, thread, t->from, !oneway /* sync */);
++	if (!pending_async) {
++		if (thread && wake_target >= 0 &&
++		    wake_target != smp_processor_id()) {
++			/* P arm: wake the remote waiter on its own CPU */
++			atomic_inc(&vwh_stat_handoff_txn);
++			WRITE_ONCE(thread->vwh_expect_cpu, wake_target);
++			WRITE_ONCE(thread->vwh_expect_dir, VWH_HANDOFF_TXN);
++			WRITE_ONCE(thread->task->recent_used_cpu,
++				   wake_target);
++			wake_up_interruptible_sync_target_cpu(&thread->wait);
++		} else {
++			binder_wakeup_thread_ilocked(proc, thread, t->from,
++						     !oneway /* sync */);
++		}
++	}
+ 
+ 	proc->outstanding_txns++;
+ 	binder_inner_proc_unlock(proc);
+@@ -5862,7 +6071,7 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	WRITE_ONCE(thread->vwh_last_cpu, -1);
+ 	WRITE_ONCE(thread->vwh_expect_cpu, -1);
+ 	WRITE_ONCE(thread->vwh_expect_dir, 0);
+-	thread->vwh_sticky = NULL;
++	thread->vwh_sticky_pid = 0;
+ 	thread->vwh_served_ns = 0;
+ 	thread->vwh_wait_ns = 0;
+ 	thread->vwh_score = 0;
+@@ -7682,6 +7891,15 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "bch_commit:        %d\n", atomic_read(&vwh_stat_bch_commit));
+ 	seq_printf(m, "bch_expire:        %d\n", atomic_read(&vwh_stat_bch_expire));
+ 	seq_printf(m, "bch_gone:          %d\n", atomic_read(&vwh_stat_bch_gone));
++	seq_printf(m, "nodrag:            %u\n", vwh_nodrag);
++	seq_printf(m, "elect_rand:        %u\n", vwh_elect_rand);
++	seq_printf(m, "elect_cost:        %u\n", vwh_elect_cost);
++	seq_printf(m, "nodrag_used:       %d\n", atomic_read(&vwh_stat_nodrag_used));
++	seq_printf(m, "nodrag_ordinary:   %d\n", atomic_read(&vwh_stat_nodrag_ordinary));
++	seq_printf(m, "elect_rand_used:   %d\n", atomic_read(&vwh_stat_elect_rand_used));
++	seq_printf(m, "elect_cost_used:   %d\n", atomic_read(&vwh_stat_elect_cost_used));
++	seq_printf(m, "elect_cost_local:  %d\n", atomic_read(&vwh_stat_elect_cost_local));
++	seq_printf(m, "elect_cost_any:    %d\n", atomic_read(&vwh_stat_elect_cost_any));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7710,6 +7928,12 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_bch_commit, 0);
+ 	atomic_set(&vwh_stat_bch_expire, 0);
+ 	atomic_set(&vwh_stat_bch_gone, 0);
++	atomic_set(&vwh_stat_nodrag_used, 0);
++	atomic_set(&vwh_stat_nodrag_ordinary, 0);
++	atomic_set(&vwh_stat_elect_rand_used, 0);
++	atomic_set(&vwh_stat_elect_cost_used, 0);
++	atomic_set(&vwh_stat_elect_cost_local, 0);
++	atomic_set(&vwh_stat_elect_cost_any, 0);
+ 	return count;
+ }
+ 
+@@ -7840,6 +8064,12 @@ static int __init binder_init(void)
+ 					   &vwh_handoff_defer);
+ 			debugfs_create_u32("defer_window_us", 0644, ctabs_dir,
+ 					   &vwh_defer_window_us);
++			debugfs_create_u32("nodrag", 0644, ctabs_dir,
++					   &vwh_nodrag);
++			debugfs_create_u32("elect_rand", 0644, ctabs_dir,
++					   &vwh_elect_rand);
++			debugfs_create_u32("elect_cost", 0644, ctabs_dir,
++					   &vwh_elect_cost);
+ 			debugfs_create_u32("mode", 0644, ctabs_dir,
+ 					   &vwh_mode);
+ 			debugfs_create_u32("sis_current", 0644, ctabs_dir,
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 362428b026a2..29f19a5e68c7 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -621,7 +621,7 @@ struct binder_thread {
+ 	 * VWH election bookkeeping (modes 4-7): caller's sticky worker,
+ 	 * waiter timestamps and the learned handoff score.
+ 	 */
+-	struct binder_thread *vwh_sticky;
++	int vwh_sticky_pid;
+ 	u64 vwh_served_ns;
+ 	u64 vwh_wait_ns;
+ 	int vwh_score;
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 6325559eff1d..33dc79a9eaa9 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -2305,6 +2305,8 @@ static inline bool vcpu_is_preempted(int cpu)
+ 
+ extern long sched_setaffinity(pid_t pid, const struct cpumask *new_mask);
+ int sched_pick_vip_cpu(struct task_struct *p);
++bool sched_handoff_target_ok(struct task_struct *p, int cpu);
++bool sched_handoff_local_ok(struct task_struct *p, int cpu);
+ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
+ 
+ #ifndef TASK_SIZE_OF
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 4c948a2a4678..cf6b40ed2b96 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7861,6 +7861,50 @@ int sched_pick_vip_cpu(struct task_struct *p)
+ 	return best;
+ }
+ 
++/*
++ * VWH election v2: is @cpu a viable no-drag target for @p -- online, allowed,
++ * fits and currently idle?  Used by Binder to wake a remote waiter on its own
++ * CPU instead of dragging it to the caller (P arm of the order/placement
++ * decomposition).
++ */
++bool sched_handoff_target_ok(struct task_struct *p, int cpu)
++{
++	if ((unsigned int)cpu >= nr_cpu_ids || !cpu_online(cpu))
++		return false;
++	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
++		return false;
++	if (!task_fits_cpu(p, cpu))
++		return false;
++	return available_idle_cpu(cpu);
++}
++
++/*
++ * Binder-side mirror of handoff_admit()'s envelope for the election's
++ * "feasible local" invariant (I2/I3): would a hand-off of @p to @cpu pass
++ * admission?  Deliberately does NOT check idleness -- the caller is running
++ * on @cpu at election time; idle is required only for no-drag targets
++ * (sched_handoff_target_ok()).  Reads the same handoff_guard knob as the
++ * wake path so election and admission cannot disagree.
++ */
++bool sched_handoff_local_ok(struct task_struct *p, int cpu)
++{
++	unsigned int guard = READ_ONCE(handoff_guard);
++
++	if ((unsigned int)cpu >= nr_cpu_ids || !cpu_online(cpu))
++		return false;
++	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
++		return false;
++	if ((guard & HANDOFF_GUARD_EXITING) && (current->flags & PF_EXITING))
++		return false;
++	if ((guard & HANDOFF_GUARD_OCCUPANCY) && cpu_rq(cpu)->nr_running != 1)
++		return false;
++	if ((guard & HANDOFF_GUARD_FITS) && !task_fits_cpu(p, cpu))
++		return false;
++	if ((guard & HANDOFF_GUARD_WIDE) && wake_wide(p))
++		return false;
++	return true;
++}
++
+ /*
+  * Called immediately before a task is migrated to a new CPU; task_cpu(p) and
+  * cfs_rq_of(p) references at time of call are still valid and identify the

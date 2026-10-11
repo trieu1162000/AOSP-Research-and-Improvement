@@ -1,0 +1,206 @@
+From 1894239906e8afa9364fe6c1648d1ee7bc0963ef Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Thu, 8 Oct 2026 02:36:56 +0700
+Subject: [PATCH] sched: scheduler-side handoff extensions (sched-only)
+
+The v3 sweep isolates the guard checks: FITS alone is neutral (g9,
+52,237 w8) while OCCUPANCY costs ~3% (g5, 50,620) and turns ~40k local
+handoffs into misses, because the waker's rq may still hold another task
+when the waker is about to sleep.  The default envelope therefore becomes
+AFFINITY|EXITING|FITS, affinity becomes mandatory instead of filtered,
+and a WIDE bit (!wake_wide) is added as an opt-in filter.
+
+Two scheduler-side extensions make the handoff contract independent of
+state the scheduler should not care about:
+
+  EAS_SYNC: the EAS sync fast path is gated on rd->overutilized even
+  though only the local runqueue matters for a handoff - the waker blocks
+  right after the wakeup and hands the rq to a wakee that fits.  Under
+  load the handoff is dropped exactly when it is most valuable; opt in to
+  the local-only view.
+
+  FALLBACK: when a sync wakeup does not get a handoff, keep the wakee on
+  its previous CPU when it is idle and fits, before the vendor hook and
+  EAS run; a rejected handoff then cannot silently become a migration.
+
+Both are opt-in (handoff_extras bitmask) and default off, so existing
+arms keep their behaviour.  The knob and the fallback counter are
+exposed under /sys/kernel/debug/sched/ (handoff_extras,
+handoff_fallback_hits).
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ kernel/sched/debug.c |  4 +++
+ kernel/sched/fair.c  | 79 +++++++++++++++++++++++++++++++++++++++++---
+ kernel/sched/sched.h |  4 +++
+ 3 files changed, 82 insertions(+), 5 deletions(-)
+
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+index e5e35bd10a20..d229bca4c829 100644
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -321,6 +321,10 @@ static __init int sched_init_debug(void)
+ #ifdef CONFIG_SMP
+ 	debugfs_create_file("tunable_scaling", 0644, debugfs_sched, NULL, &sched_scaling_fops);
+ 	debugfs_create_u32("migration_cost_ns", 0644, debugfs_sched, &sysctl_sched_migration_cost);
++	debugfs_create_u32("handoff_extras", 0644, debugfs_sched,
++			   &handoff_extras);
++	debugfs_create_atomic_t("handoff_fallback_hits", 0444, debugfs_sched,
++				&vwh_stat_fallback);
+ 	debugfs_create_u32("nr_migrate", 0644, debugfs_sched, &sysctl_sched_nr_migrate);
+ 
+ 	mutex_lock(&sched_domains_mutex);
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 5392243e86e0..6afbd10e5128 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7378,6 +7378,33 @@ compute_energy(struct energy_env *eenv, struct perf_domain *pd,
+  * other use-cases too. So, until someone finds a better way to solve this,
+  * let's keep things simple by re-using the existing slow path.
+  */
++/*
++ * VWH scheduler-side handoff extensions (bitmask, default off):
++ *
++ * EAS_SYNC: keep the sync current-CPU handoff when the root domain is
++ *           overutilized but the local runqueue is handing over (the
++ *           waker blocks right after the wakeup and the wakee fits).
++ * FALLBACK: when a sync wakeup does not get a handoff, keep the wakee
++ *           on its previous CPU if it is idle and fits instead of
++ *           falling through to the vendor hook and EAS, so a rejected
++ *           handoff cannot silently become a migration.
++ */
++#define HANDOFF_EXTRA_EAS_SYNC		BIT(0)
++#define HANDOFF_EXTRA_FALLBACK		BIT(1)
++unsigned int handoff_extras __read_mostly;
++atomic_t vwh_stat_fallback = ATOMIC_INIT(0);
++
++static int handoff_fallback_cpu(struct task_struct *p, int prev_cpu)
++{
++	if (prev_cpu >= 0 && prev_cpu < nr_cpu_ids && cpu_online(prev_cpu) &&
++	    cpumask_test_cpu(prev_cpu, p->cpus_ptr) &&
++	    available_idle_cpu(prev_cpu) && task_fits_cpu(p, prev_cpu)) {
++		atomic_inc(&vwh_stat_fallback);
++		return prev_cpu;
++	}
++	return -1;
++}
++
+ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sync)
+ {
+ 	struct cpumask *cpus = this_cpu_cpumask_var_ptr(select_rq_mask);
+@@ -7402,17 +7429,30 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
+ 
+ 	rcu_read_lock();
+ 	pd = rcu_dereference(rd->pd);
+-	if (!pd || READ_ONCE(rd->overutilized))
++	if (!pd)
+ 		goto unlock;
+ 
+ 	cpu = smp_processor_id();
++	/*
++	 * Current-CPU handoff for a sync wakeup.  The stock ordering checks
++	 * rd->overutilized first and drops the handoff under load even
++	 * though only the local state matters: the waker blocks right after
++	 * the wakeup and hands the runqueue over to a wakee that fits.
++	 * Keep the stock behaviour by default, make the local-only view
++	 * opt-in.
++	 */
+ 	if (sync && cpu_rq(cpu)->nr_running == 1 &&
+ 	    cpumask_test_cpu(cpu, p->cpus_ptr) &&
+-	    task_fits_cpu(p, cpu)) {
++	    task_fits_cpu(p, cpu) &&
++	    (!READ_ONCE(rd->overutilized) ||
++	     (READ_ONCE(handoff_extras) & HANDOFF_EXTRA_EAS_SYNC))) {
+ 		rcu_read_unlock();
+ 		return cpu;
+ 	}
+ 
++	if (READ_ONCE(rd->overutilized))
++		goto unlock;
++
+ 	/*
+ 	 * Energy-aware wake-up happens on the lowest sched_domain starting
+ 	 * from sd_asym_cpucapacity spanning over this_cpu and prev_cpu.
+@@ -7589,12 +7629,24 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
+ #define HANDOFF_GUARD_EXITING		BIT(1)
+ #define HANDOFF_GUARD_OCCUPANCY		BIT(2)
+ #define HANDOFF_GUARD_FITS		BIT(3)
++#define HANDOFF_GUARD_WIDE		BIT(4)
+ #define HANDOFF_GUARD_FULL		(HANDOFF_GUARD_AFFINITY |	\
+ 					 HANDOFF_GUARD_EXITING |	\
+ 					 HANDOFF_GUARD_OCCUPANCY |	\
+ 					 HANDOFF_GUARD_FITS)
+ 
+-unsigned int handoff_guard __read_mostly = HANDOFF_GUARD_FULL;
++/*
++ * v3 measurement: OCCUPANCY rejects ~40k local handoffs per run because
++ * the waker's rq may still hold another task when the waker is about to
++ * sleep, and costs ~3% throughput; FITS is neutral and keeps the
++ * capacity constraint.  The default envelope is therefore affinity +
++ * exiting + fits; OCCUPANCY and WIDE stay opt-in.
++ */
++#define HANDOFF_GUARD_DEFAULT	(HANDOFF_GUARD_AFFINITY |	\
++				 HANDOFF_GUARD_EXITING |	\
++				 HANDOFF_GUARD_FITS)
++
++unsigned int handoff_guard __read_mostly = HANDOFF_GUARD_DEFAULT;
+ 
+ /*
+  * Admission for a current-CPU handoff request.  A request is admitted only
+@@ -7609,8 +7661,11 @@ static bool handoff_admit(struct task_struct *p, int cpu, int wake_flags)
+ 	    (WF_TTWU | WF_SYNC | WF_CURRENT_CPU))
+ 		return false;
+ 
+-	if ((guard & HANDOFF_GUARD_AFFINITY) &&
+-	    !cpumask_test_cpu(cpu, p->cpus_ptr))
++	/*
++	 * Affinity is mandatory: a placement hint must never override
++	 * p->cpus_ptr, the bitmask only filters the remaining checks.
++	 */
++	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
+ 		return false;
+ 	if ((guard & HANDOFF_GUARD_EXITING) && (current->flags & PF_EXITING))
+ 		return false;
+@@ -7618,6 +7673,8 @@ static bool handoff_admit(struct task_struct *p, int cpu, int wake_flags)
+ 		return false;
+ 	if ((guard & HANDOFF_GUARD_FITS) && !task_fits_cpu(p, cpu))
+ 		return false;
++	if ((guard & HANDOFF_GUARD_WIDE) && wake_wide(p))
++		return false;
+ 
+ 	return true;
+ }
+@@ -7670,6 +7727,18 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 			return cpu;
+ 	}
+ 
++	/*
++	 * A sync wakeup that did not get a handoff: prefer the wakee's own
++	 * CPU when it is idle and fits, before the vendor hook and EAS.
++	 */
++	if (sync && (wake_flags & WF_TTWU) &&
++	    (READ_ONCE(handoff_extras) & HANDOFF_EXTRA_FALLBACK)) {
++		int fc = handoff_fallback_cpu(p, prev_cpu);
++
++		if (fc >= 0)
++			return fc;
++	}
++
+ 	if (trace_android_rvh_select_task_rq_fair_enabled() &&
+ 	    !(sd_flag & SD_BALANCE_FORK))
+ 		sync_entity_load_avg(&p->se);
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 614365d77a95..e68f0c0cbc78 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2131,6 +2131,10 @@ static inline int task_on_rq_migrating(struct task_struct *p)
+ 
+ #define WF_ANDROID_VENDOR	0x1000 /* Vendor specific for Android */
+ 
++/* VWH scheduler-side handoff extensions; see kernel/sched/fair.c. */
++extern unsigned int handoff_extras;
++extern atomic_t vwh_stat_fallback;
++
+ #ifdef CONFIG_SMP
+ static_assert(WF_EXEC == SD_BALANCE_EXEC);
+ static_assert(WF_FORK == SD_BALANCE_FORK);
