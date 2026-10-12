@@ -1,0 +1,27 @@
+﻿Final series base: 266f523db5be (android14-6.1.145_r00)
+Tree of record: E:\workspace\aosp_research\ktmp_ctabs (branch sel-b)
+
+git log --oneline 266f523db5be..HEAD:
+afc5c09a2c58 sched: require an idle target at wake time for WF_TARGET_CPU
+5402cf6df6ee sched/binder: election v2 experimental arms (nodrag, random victim, cost)
+5341d71bb479 sched/binder: defer two-way request wake until commit (BCH)
+f8f7d3a52857 sched/binder: capacity-first target selection (MUSched-lite baseline)
+1894239906e8 sched: scheduler-side handoff extensions (sched-only)
+286c44b66617 sched: adapt SIS_SHORT/SIS_CURRENT ahead of the vendor hook
+29fd0219ac13 sched/binder: selection ladder modes 4-7 (sticky, MRU, aging, learned)
+e5a9f15a9306 sched/binder: topology-aware waiter election (VWH-C+)
+52b66f3e1b89 sched/binder: election-aware Binder wakeup (VWH-C)
+08419b1841be sched: admit current-CPU handoff requests (verified envelope)
+c8b19233da6e sched: backport current-CPU wakeup for synchronous IPC
+
+git diff --stat 266f523db5be..HEAD:
+ drivers/android/binder.c          | 787 +++++++++++++++++++++++++++++++++++++-
+ drivers/android/binder_internal.h |  24 ++
+ include/linux/sched.h             |  10 +-
+ include/linux/wait.h              |   6 +
+ kernel/sched/core.c               |   6 +-
+ kernel/sched/debug.c              |   5 +
+ kernel/sched/fair.c               | 312 ++++++++++++++-
+ kernel/sched/sched.h              |   6 +
+ kernel/sched/wait.c               |  37 ++
+ 9 files changed, 1177 insertions(+), 16 deletions(-)

@@ -1,0 +1,539 @@
+From b4a032eaadfc28e040f286e40ac8cc76dd825f61 Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Mon, 12 Oct 2026 20:43:33 +0700
+Subject: [PATCH] binder: adaptive cost-aware wakee election (elect_load=4)
+
+Port the measured elect_load=4 mode from the 6.12 lab kernel (tuned there to a 32768-decision latch window).  It times every VWH election: the woken waiter samples ktime_get_ns() - vwh_served_ns right after schedule() in binder_wait_for_work(), drops deltas >= 10ms as stalls, and folds the rest into two 7/8 EWMAs split by pick class -- local (waiter last_cpu == caller) and remote.
+
+While either class has fewer than 100 samples the election probes the lagging class: probing remote accepts any idle CPU, probing local runs the same-CPU pick first (a waiter parked on the caller CPU can never be idle).  The measured winner is then latched for VWH_ADAPT_WINDOW = 32768 decisions -- remote if ewma_remote <= ewma_local * 105/100, else local -- after which the sample counts and EWMAs are dropped and a fresh balanced probe re-calibrates.  The long window is the 6.12 tune: the probe phases are the mode cost, so they are kept rare.
+
+elect_load=1/2/3 are unchanged; 4 extends the same arm.  The same-CPU pick rules (first match, MRU from mode 5, random reservoir) move into vwh_pick_same_cpu() so the adaptive local preference and the ladder below agree.
+
+FIFO fallback picks are tagged VWH_RD_CLASS_NONE so their latency is not charged to an adaptive EWMA (the stamp keeps feeding the MRU and nodrag rankings).
+
+Stats and reset gain elect_adaptive_spread, elect_adaptive_local, ewma_local_ns, ewma_remote_ns, n_local, n_remote, adapt_pref and adapt_used.
+---
+ drivers/android/binder.c          | 327 ++++++++++++++++++++++++++----
+ drivers/android/binder_internal.h |   8 +
+ 2 files changed, 298 insertions(+), 37 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 18e825919734..7169c116671e 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -812,7 +812,8 @@ static unsigned int vwh_score_decay __read_mostly = 4;
+ static unsigned int vwh_nodrag __read_mostly;
+ static unsigned int vwh_elect_rand __read_mostly;
+ static unsigned int vwh_elect_cost __read_mostly;
+-static unsigned int vwh_elect_load __read_mostly;	/* B-arm: 1=idle, 2=near, 3=+fits */
++/* B-arm load election: 1 = idle, 2 = near, 3 = +fits, 4 = adaptive */
++static unsigned int vwh_elect_load __read_mostly;
+ 
+ static atomic_t vwh_stat_nodrag_used = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_nodrag_ordinary = ATOMIC_INIT(0);
+@@ -823,6 +824,44 @@ static atomic_t vwh_stat_elect_cost_any = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_load_idle = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_load_idle_near = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_load_used = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_adaptive_spread = ATOMIC_INIT(0);
++static atomic_t vwh_stat_elect_adaptive_local = ATOMIC_INIT(0);
++
++/*
++ * elect_load=4: measured cost-aware adaptive election, ported from the
++ * 6.12 lab kernel where it was tuned (window 32768).
++ *
++ * Cost metric: the time from the election of a waiter to that waiter
++ * actually running.  vwh_take_thread() stamps vwh_served_ns plus the
++ * class of the pick, and the woken thread turns that into a sample in
++ * vwh_note_wakeup() (called from binder_wait_for_work()).  A pick on
++ * the caller's CPU has to wait for the caller to deschedule, a pick on
++ * an idle CPU should start almost immediately.  Two 7/8 EWMAs (plus
++ * sample counts) are kept, split by pick class.
++ *
++ * Samples taken while one class is being exploited are biased by the
++ * load that preference itself creates, so a continuously updated
++ * comparison just oscillates between two self-reinforcing equilibria.
++ * The mode therefore calibrates on a short balanced probe (elect from
++ * the class with fewer samples until both have VWH_ADAPT_WARMUP),
++ * latches the winner for VWH_ADAPT_WINDOW decisions, then re-calibrates
++ * from a clean slate.  The window is long on purpose: the probe phases
++ * are what make this mode cost throughput, so re-probes are rare.
++ *
++ * task->sched_info.run_delay was tried as the sample source first, but
++ * on this kernel its increments are exactly 0 for idle-CPU wakeups
++ * (only the busy-CPU path is accounted), so it cannot compare the two
++ * classes.  Updates happen under a proc inner_lock; different binder
++ * procs can race on these globals, but a torn or mixed sample only
++ * perturbs a lab heuristic, so no global lock.
++ */
++static u64 vwh_ewma_local;	/* ns, caller-CPU election-to-run delay */
++static u64 vwh_ewma_remote;	/* ns, remote-CPU election-to-run delay */
++static u32 vwh_n_local;		/* samples behind vwh_ewma_local */
++static u32 vwh_n_remote;	/* samples behind vwh_ewma_remote */
++static u32 vwh_adapt_pref;	/* latched winner: 1 = spread, 0 = local */
++static u32 vwh_adapt_used;	/* decisions since the last calibration */
++static bool vwh_adapt_ready;	/* vwh_adapt_pref is valid */
+ 
+ #define VWH_COST_MIG_SAME	0
+ #define VWH_COST_MIG_CLUSTER	3000
+@@ -833,6 +872,14 @@ static atomic_t vwh_stat_elect_load_used = ATOMIC_INIT(0);
+ #define VWH_COST_AGE_MAX	256
+ #define VWH_COST_CAP_SCALE	4
+ 
++#define VWH_RD_CLASS_LOCAL	0	/* waiter was on the caller CPU */
++#define VWH_RD_CLASS_REMOTE	1	/* waiter was on another CPU */
++#define VWH_RD_CLASS_NONE	2	/* stamp is not a VWH election */
++#define VWH_RD_MAX_SAMPLE	(10ULL * NSEC_PER_MSEC)	/* drop long stalls */
++#define VWH_ADAPT_WARMUP	100	/* samples per class */
++#define VWH_ADAPT_WINDOW	32768	/* decisions per latch */
++#define VWH_ADAPT_HYST		105	/* remote <= local * 105/100 */
++
+ bool sched_handoff_target_ok(struct task_struct *p, int cpu);
+ bool sched_handoff_local_ok(struct task_struct *p, int cpu);
+ 
+@@ -932,13 +979,154 @@ static atomic_t vwh_stat_elected_sticky = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elected_age = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_elect_fallback = ATOMIC_INIT(0);
+ 
+-static struct binder_thread *vwh_take_thread(struct binder_thread *thread)
++static struct binder_thread *vwh_take_thread(struct binder_thread *thread,
++					     int caller_cpu)
+ {
++	/*
++	 * elect_load=4: record the pick class first -- the woken waiter
++	 * reads it together with vwh_served_ns to produce the
++	 * adaptive election-to-run latency sample.
++	 */
++	WRITE_ONCE(thread->vwh_rd_class,
++		   READ_ONCE(thread->vwh_last_cpu) == caller_cpu ?
++		   VWH_RD_CLASS_LOCAL : VWH_RD_CLASS_REMOTE);
+ 	list_del_init(&thread->waiting_thread_node);
+ 	WRITE_ONCE(thread->vwh_served_ns, ktime_get_ns());
+ 	return thread;
+ }
+ 
++/*
++ * elect_load=4 preference for the next election: 1 = spread to a remote
++ * CPU, 0 = keep the work on the caller's CPU, -1 = not enough samples
++ * yet (the caller probes the lagging class while warming up).  The 5%
++ * hysteresis keeps the mode from flapping between the two choices on
++ * noise.
++ */
++static int vwh_adaptive_prefer_remote(void)
++{
++	if (READ_ONCE(vwh_n_local) < VWH_ADAPT_WARMUP ||
++	    READ_ONCE(vwh_n_remote) < VWH_ADAPT_WARMUP)
++		return -1;
++
++	return READ_ONCE(vwh_ewma_remote) <=
++	       READ_ONCE(vwh_ewma_local) * VWH_ADAPT_HYST / 100;
++}
++
++/*
++ * elect_load=4 phase machine, called once per election: 1 = spread,
++ * 0 = keep it local, -1 = calibrating (the caller probes the lagging
++ * class).  A calibration ends as soon as both classes have
++ * VWH_ADAPT_WARMUP samples; the winner is then latched for
++ * VWH_ADAPT_WINDOW decisions, after which the samples are dropped and a
++ * fresh balanced probe re-calibrates.  The long window means the mode
++ * spends almost all of its time on the latched winner and only notices
++ * environment changes once per window.
++ */
++static int vwh_adapt_next(void)
++{
++	if (READ_ONCE(vwh_adapt_ready)) {
++		if (++vwh_adapt_used < VWH_ADAPT_WINDOW)
++			return READ_ONCE(vwh_adapt_pref);
++
++		/* exploit window over: re-calibrate from a clean slate */
++		vwh_adapt_ready = false;
++		vwh_adapt_used = 0;
++		vwh_n_local = 0;
++		vwh_n_remote = 0;
++		vwh_ewma_local = 0;
++		vwh_ewma_remote = 0;
++	}
++
++	if (READ_ONCE(vwh_n_local) < VWH_ADAPT_WARMUP ||
++	    READ_ONCE(vwh_n_remote) < VWH_ADAPT_WARMUP)
++		return -1;
++
++	/* balanced probe done: latch the measured winner */
++	vwh_adapt_pref = vwh_adaptive_prefer_remote();
++	vwh_adapt_ready = true;
++	vwh_adapt_used = 0;
++	return vwh_adapt_pref;
++}
++
++/*
++ * elect_load=4 latency sample, taken by a waiter right after it wakes
++ * up and re-takes the proc lock.  @last_served is the caller's cached
++ * copy of vwh_served_ns: if it did not change, this wakeup was not a
++ * stamped pick (signal, freezer, stray wake) and is ignored.  The
++ * elapsed time is charged to the class the elector recorded for the
++ * pick; deltas of 10ms or more are dropped as stalls.  FIFO fallback
++ * picks (vwh_rd_class none) are not elections, and sampling happens
++ * only while a load-aware mode is active, so the EWMAs also warm up
++ * during elect_load=1/2/3 runs.
++ */
++static void vwh_note_wakeup(struct binder_thread *w, u64 *last_served)
++{
++	u64 served = READ_ONCE(w->vwh_served_ns);
++	u64 now, latency;
++	u8 cls;
++
++	if (served == *last_served)
++		return;
++	*last_served = served;
++	if (!served || !READ_ONCE(vwh_elect_load))
++		return;
++	cls = READ_ONCE(w->vwh_rd_class);
++	if (cls != VWH_RD_CLASS_LOCAL && cls != VWH_RD_CLASS_REMOTE)
++		return;
++	now = ktime_get_ns();
++	if (now < served)
++		return;
++	latency = now - served;
++	if (latency >= VWH_RD_MAX_SAMPLE)
++		return;
++	if (cls == VWH_RD_CLASS_REMOTE) {
++		vwh_ewma_remote = (vwh_ewma_remote * 7 + latency) / 8;
++		vwh_n_remote++;
++	} else {
++		vwh_ewma_local = (vwh_ewma_local * 7 + latency) / 8;
++		vwh_n_local++;
++	}
++}
++
++/*
++ * Pick a waiter last seen on @caller_cpu: the first match, the most
++ * recently served one above *served when vwh_mode >= 5 (MRU ladder), or
++ * a reservoir pick when vwh_elect_rand is set.  *served is only updated
++ * by the mode >= 5 comparison; the same-CPU ladder and the elect_load=4
++ * local preference share the pick rules through this helper.
++ */
++static struct binder_thread *
++vwh_pick_same_cpu(struct binder_proc *proc, int caller_cpu, u64 *served)
++{
++	struct binder_thread *thread, *best = NULL;
++	unsigned int n = 0;
++
++	list_for_each_entry(thread, &proc->waiting_threads,
++			    waiting_thread_node) {
++		u64 s;
++		int wcpu = READ_ONCE(thread->vwh_last_cpu);
++
++		if (wcpu != caller_cpu)
++			continue;
++		if (READ_ONCE(vwh_elect_rand)) {
++			if (get_random_u32_below(++n) == 0)
++				best = thread;
++			continue;
++		}
++		s = READ_ONCE(thread->vwh_served_ns);
++		if (vwh_mode >= 5) {
++			if (!best || s > *served) {
++				best = thread;
++				*served = s;
++			}
++		} else {
++			best = thread;
++			break;
++		}
++	}
++	return best;
++}
++
+ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 					      struct binder_thread *caller,
+ 					      int *wake_target)
+@@ -993,7 +1181,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		if (local) {
+ 			atomic_inc(&vwh_stat_elect_cost_local);
+ 			atomic_inc(&vwh_stat_elect_cost_used);
+-			best = vwh_take_thread(local);
++			best = vwh_take_thread(local, caller_cpu);
+ 			goto out;
+ 		}
+ 		if (any) {
+@@ -1001,7 +1189,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 
+ 			atomic_inc(&vwh_stat_elect_cost_any);
+ 			atomic_inc(&vwh_stat_elect_cost_used);
+-			best = vwh_take_thread(any);
++			best = vwh_take_thread(any, caller_cpu);
+ 			if (READ_ONCE(vwh_nodrag) && wcpu >= 0 &&
+ 			    wcpu != caller_cpu &&
+ 			    sched_handoff_target_ok(any->task, wcpu)) {
+@@ -1020,7 +1208,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 			if (thread->pid == READ_ONCE(caller->vwh_sticky_pid) &&
+ 			    READ_ONCE(thread->vwh_last_cpu) == caller_cpu) {
+ 				atomic_inc(&vwh_stat_elected_sticky);
+-				best = vwh_take_thread(thread);
++				best = vwh_take_thread(thread, caller_cpu);
+ 				goto out;
+ 			}
+ 		}
+@@ -1042,7 +1230,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		}
+ 		if (age_ns && best && now - oldest > age_ns) {
+ 			atomic_inc(&vwh_stat_elected_age);
+-			best = vwh_take_thread(best);
++			best = vwh_take_thread(best, caller_cpu);
+ 			goto out;
+ 		}
+ 		best = NULL;
+@@ -1072,7 +1260,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		}
+ 		if (best) {
+ 			atomic_inc(&vwh_stat_elected);
+-			best = vwh_take_thread(best);
++			best = vwh_take_thread(best, caller_cpu);
+ 			goto out;
+ 		}
+ 	}
+@@ -1087,11 +1275,60 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 	 * binder-visible predicate that wraps task_fits_cpu() (the raw
+ 	 * helper is static to fair.c).  Without an idle match the ladder
+ 	 * below still applies.
++	 *
++	 * elect_load=4 is the measured adaptive mode: vwh_adapt_next()
++	 * returns the latched preference (spread -> idle first, local ->
++	 * same-CPU first) or asks for a balanced calibration probe, which
++	 * elects from whichever class has fewer samples.  A pure idle-first
++	 * probe can never feed the local class: a waiter parked on the
++	 * caller's CPU cannot be on an idle CPU (the caller is running
++	 * there), which measured out as only ~0.1% of picks in the 6.12
++	 * lab.  Probing only biases the scan -- an idle match is still
++	 * needed, and falling through to the ladder below stays possible.
+ 	 */
+ 	if (READ_ONCE(vwh_elect_load)) {
+ 		unsigned int mode = READ_ONCE(vwh_elect_load);
+ 		struct binder_thread *idle_any = NULL, *idle_near = NULL;
+ 		unsigned int ni = 0;
++		bool idle_first = true;
++
++		if (mode == 4) {
++			int pref = vwh_adapt_next();
++
++			if (pref < 0) {
++				/* calibrating: probe the lagging class */
++				if (READ_ONCE(vwh_n_local) >=
++				    READ_ONCE(vwh_n_remote))
++					mode = 1;	/* remote probe */
++				else
++					idle_first = false;	/* local */
++			} else if (pref > 0) {
++				atomic_inc(&vwh_stat_elect_adaptive_spread);
++				mode = 1;		/* spread: any idle */
++			} else {
++				atomic_inc(&vwh_stat_elect_adaptive_local);
++				idle_first = false;	/* local first */
++			}
++		}
++
++		if (!idle_first) {
++			u64 best_served = 0;
++
++			/*
++			 * elect_load=4 "local": keep the work on the
++			 * caller's CPU if a waiter is parked there; the
++			 * pick rules match the same-CPU ladder below.
++			 */
++			best = vwh_pick_same_cpu(proc, caller_cpu,
++						 &best_served);
++			if (best) {
++				if (READ_ONCE(vwh_elect_rand))
++					atomic_inc(&vwh_stat_elect_rand_used);
++				atomic_inc(&vwh_stat_elect_load_used);
++				best = vwh_take_thread(best, caller_cpu);
++				goto out;
++			}
++		}
+ 
+ 		list_for_each_entry(thread, &proc->waiting_threads,
+ 				    waiting_thread_node) {
+@@ -1126,7 +1363,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 			    caller_cluster)
+ 				atomic_inc(&vwh_stat_elect_load_idle_near);
+ 			atomic_inc(&vwh_stat_elect_load_used);
+-			return vwh_take_thread(sel);
++			return vwh_take_thread(sel, caller_cpu);
+ 		}
+ 		/* no idle waiter -> fall through to same-CPU */
+ 	}
+@@ -1136,42 +1373,20 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		u64 best_served = 0;
+ 		unsigned int n = 0;
+ 
+-		list_for_each_entry(thread, &proc->waiting_threads,
+-				    waiting_thread_node) {
+-			u64 served;
+-			int wcpu = READ_ONCE(thread->vwh_last_cpu);
+-
+-			if (wcpu != caller_cpu)
+-				continue;
+-			if (READ_ONCE(vwh_elect_rand)) {
+-				if (get_random_u32_below(++n) == 0)
+-					best = thread;
+-				continue;
+-			}
+-			served = READ_ONCE(thread->vwh_served_ns);
+-			if (vwh_mode >= 5) {
+-				if (!best || served > best_served) {
+-					best = thread;
+-					best_served = served;
+-				}
+-			} else {
+-				best = thread;
+-				break;
+-			}
+-		}
++		best = vwh_pick_same_cpu(proc, caller_cpu, &best_served);
+ 		if (best && READ_ONCE(vwh_elect_rand)) {
+ 			atomic_inc(&vwh_stat_elected);
+ 			atomic_inc(&vwh_stat_elect_rand_used);
+ 			if (READ_ONCE(vwh_elect_load))
+ 				atomic_inc(&vwh_stat_elect_load_used);
+-			best = vwh_take_thread(best);
++			best = vwh_take_thread(best, caller_cpu);
+ 			goto out;
+ 		}
+ 		if (best) {
+ 			atomic_inc(&vwh_stat_elected);
+ 			if (READ_ONCE(vwh_elect_load))
+ 				atomic_inc(&vwh_stat_elect_load_used);
+-			best = vwh_take_thread(best);
++			best = vwh_take_thread(best, caller_cpu);
+ 			goto out;
+ 		}
+ 
+@@ -1192,7 +1407,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 				atomic_inc(&vwh_stat_elected_cluster);
+ 				if (READ_ONCE(vwh_elect_load))
+ 					atomic_inc(&vwh_stat_elect_load_used);
+-				best = vwh_take_thread(thread);
++				best = vwh_take_thread(thread, caller_cpu);
+ 				goto out;
+ 			}
+ 			if (best) {
+@@ -1200,7 +1415,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 				atomic_inc(&vwh_stat_elect_rand_used);
+ 				if (READ_ONCE(vwh_elect_load))
+ 					atomic_inc(&vwh_stat_elect_load_used);
+-				best = vwh_take_thread(best);
++				best = vwh_take_thread(best, caller_cpu);
+ 				goto out;
+ 			}
+ 		}
+@@ -1235,7 +1450,7 @@ static struct binder_thread *vwh_elect_thread(struct binder_proc *proc,
+ 		    sched_handoff_target_ok(rb->task, best_cpu)) {
+ 			atomic_inc(&vwh_stat_nodrag_used);
+ 			atomic_inc(&vwh_stat_elect_fallback);
+-			best = vwh_take_thread(rb);
++			best = vwh_take_thread(rb, caller_cpu);
+ 			*wake_target = best_cpu;
+ 			goto out;
+ 		}
+@@ -3714,8 +3929,18 @@ static int binder_proc_transaction(struct binder_transaction *t,
+ 	if (!thread && !pending_async && !skip) {
+ 		if (!oneway)
+ 			thread = vwh_elect_thread(proc, t->from, &wake_target);
+-		if (!thread)
++		if (!thread) {
+ 			thread = binder_select_thread_ilocked(proc);
++			/*
++			 * elect_load=4: tag the FIFO fallback so its
++			 * latency sample is not charged to an adaptive
++			 * EWMA (the stamp below still feeds the MRU and
++			 * nodrag rankings).
++			 */
++			if (thread)
++				WRITE_ONCE(thread->vwh_rd_class,
++					   VWH_RD_CLASS_NONE);
++		}
+ 		if (thread)
+ 			WRITE_ONCE(thread->vwh_served_ns, ktime_get_ns());
+ 	}
+@@ -5468,6 +5693,7 @@ static int binder_wait_for_work(struct binder_thread *thread,
+ 	DEFINE_WAIT(wait);
+ 	struct binder_proc *proc = thread->proc;
+ 	bool bch_committed = false;
++	u64 vwh_served = READ_ONCE(thread->vwh_served_ns);
+ 	int ret = 0;
+ 
+ 	binder_inner_proc_lock(proc);
+@@ -5501,6 +5727,8 @@ static int binder_wait_for_work(struct binder_thread *thread,
+ 		vwh_note_landing(thread);
+ 		binder_inner_proc_lock(proc);
+ 		list_del_init(&thread->waiting_thread_node);
++		/* elect_load=4: sample this wakeup's election-to-run latency */
++		vwh_note_wakeup(thread, &vwh_served);
+ 		if (signal_pending(current)) {
+ 			ret = -EINTR;
+ 			break;
+@@ -6139,6 +6367,7 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	WRITE_ONCE(thread->vwh_expect_dir, 0);
+ 	thread->vwh_sticky_pid = 0;
+ 	thread->vwh_served_ns = 0;
++	thread->vwh_rd_class = VWH_RD_CLASS_NONE;
+ 	thread->vwh_wait_ns = 0;
+ 	thread->vwh_score = 0;
+ 	hrtimer_init(&thread->vwh_bch_timer, CLOCK_MONOTONIC,
+@@ -7972,6 +8201,20 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 		   atomic_read(&vwh_stat_elect_load_idle_near));
+ 	seq_printf(m, "elect_load_used:   %d\n",
+ 		   atomic_read(&vwh_stat_elect_load_used));
++	seq_printf(m, "elect_adaptive_spread: %d\n",
++		   atomic_read(&vwh_stat_elect_adaptive_spread));
++	seq_printf(m, "elect_adaptive_local: %d\n",
++		   atomic_read(&vwh_stat_elect_adaptive_local));
++	seq_printf(m, "ewma_local_ns:     %llu\n",
++		   (unsigned long long)READ_ONCE(vwh_ewma_local));
++	seq_printf(m, "ewma_remote_ns:    %llu\n",
++		   (unsigned long long)READ_ONCE(vwh_ewma_remote));
++	seq_printf(m, "n_local:           %u\n", READ_ONCE(vwh_n_local));
++	seq_printf(m, "n_remote:          %u\n", READ_ONCE(vwh_n_remote));
++	seq_printf(m, "adapt_pref:        %d\n",
++		   READ_ONCE(vwh_adapt_ready) ?
++		   (int)READ_ONCE(vwh_adapt_pref) : -1);
++	seq_printf(m, "adapt_used:        %u\n", READ_ONCE(vwh_adapt_used));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -8009,6 +8252,16 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_elect_load_idle, 0);
+ 	atomic_set(&vwh_stat_elect_load_idle_near, 0);
+ 	atomic_set(&vwh_stat_elect_load_used, 0);
++	atomic_set(&vwh_stat_elect_adaptive_spread, 0);
++	atomic_set(&vwh_stat_elect_adaptive_local, 0);
++	/* re-arm the adaptive statistics so a fresh run warms up on its own */
++	vwh_ewma_local = 0;
++	vwh_ewma_remote = 0;
++	vwh_n_local = 0;
++	vwh_n_remote = 0;
++	vwh_adapt_pref = 0;
++	vwh_adapt_used = 0;
++	vwh_adapt_ready = false;
+ 	return count;
+ }
+ 
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 29f19a5e68c7..447d68d3cf11 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -623,6 +623,14 @@ struct binder_thread {
+ 	 */
+ 	int vwh_sticky_pid;
+ 	u64 vwh_served_ns;
++	/*
++	 * elect_load=4: class of the last VWH election on this thread
++	 * (0 = waiter was on the caller's CPU, 1 = remote, 2 = the stamp
++	 * came from the FIFO fallback, not an election).  Written by the
++	 * elector in vwh_take_thread() before vwh_served_ns, read by the
++	 * woken waiter in vwh_note_wakeup().
++	 */
++	u8 vwh_rd_class;
+ 	u64 vwh_wait_ns;
+ 	int vwh_score;
+ 	/* BCH: deferred two-way request wake owned by this thread (caller) */

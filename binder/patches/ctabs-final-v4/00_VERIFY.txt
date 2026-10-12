@@ -1,0 +1,25 @@
+﻿# final series verification, generated 2026-10-10T12:09:54
+# scan patterns: 12345 | patch1v15 | normal_prio | %pK | trace_printk | FIXME | XXX-debug
+OK	0001-sched-backport-current-CPU-wakeup-for-synchronous-IP.patch
+SHA256	0001-sched-backport-current-CPU-wakeup-for-synchronous-IP.patch	534B78C33EF7D01A1771CBBEAAE43091159ABA3DB9C2DD672493E654697EFA26
+OK	0002-sched-admit-current-CPU-handoff-requests-verified-en.patch
+SHA256	0002-sched-admit-current-CPU-handoff-requests-verified-en.patch	5E8B6702FD30C72AC7DAEE0A3640D2DEEE89B3A14B31143AACA19F3BAC7AE715
+OK	0003-sched-binder-election-aware-Binder-wakeup-VWH-C.patch
+SHA256	0003-sched-binder-election-aware-Binder-wakeup-VWH-C.patch	AD6205B14CFD456A90C06795B50582B6DC2077C7CC0A71AD2CBDFD2D07991A77
+OK	0004-sched-binder-topology-aware-waiter-election-VWH-C.patch
+SHA256	0004-sched-binder-topology-aware-waiter-election-VWH-C.patch	8574630AA391D8981385FC2CAAF4CF27D65D9D67A636716A9B691443BEFCBD72
+OK	0005-sched-binder-selection-ladder-modes-4-7-sticky-MRU-a.patch
+SHA256	0005-sched-binder-selection-ladder-modes-4-7-sticky-MRU-a.patch	0A269A6288FD4B14919A842A7F766992EF447F4CCF0DC760B0079088C9A64583
+OK	0006-sched-binder-defer-two-way-request-wake-until-commit.patch
+SHA256	0006-sched-binder-defer-two-way-request-wake-until-commit.patch	702FB8EB1019ABE1A79E32AA8387662382729BBD401E6EA3F6D3AC3FBF9296EC
+OK	0007-sched-binder-election-v2-experimental-arms-nodrag-ra.patch
+SHA256	0007-sched-binder-election-v2-experimental-arms-nodrag-ra.patch	5C61AE5920C718ADC07A30A06E43ADD0F4842FD3B7D454D2D784EB0CE3DBFDBB
+OK	0008-sched-require-an-idle-target-at-wake-time-for-WF_TAR.patch
+SHA256	0008-sched-require-an-idle-target-at-wake-time-for-WF_TAR.patch	0C218CD9EA035A711372BB7CA29D9050E9926E097BA6B52B152E5AFDC92B6EF8
+OK	0001-sched-adapt-SIS_SHORT-SIS_CURRENT-ahead-of-the-vendo.patch
+SHA256	baselines\0001-sched-adapt-SIS_SHORT-SIS_CURRENT-ahead-of-the-vendo.patch	137860373A71D79F7E785E20CEE7B1EF3E9AA10733C5D6519D2EF99F69107C0A
+OK	0002-sched-scheduler-side-handoff-extensions-sched-only.patch
+SHA256	baselines\0002-sched-scheduler-side-handoff-extensions-sched-only.patch	499FF18D2048843E16060E6635BE729CA6E98B1225577B812F8C6387792C8515
+OK	0003-sched-binder-capacity-first-target-selection-MUSched.patch
+SHA256	baselines\0003-sched-binder-capacity-first-target-selection-MUSched.patch	DDAB2C6F114A176A226CBCFEBEA615B4A9942903EF545EF9616CF8E7F3072DDD
+RESULT: clean

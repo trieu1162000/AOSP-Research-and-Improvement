@@ -1,0 +1,346 @@
+From c8b19233da6e9c5afb87a247905e63eb4bb2fe1e Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Tue, 6 Oct 2026 20:36:27 +0700
+Subject: [PATCH] sched: backport current-CPU wakeup for synchronous IPC
+
+Add WF_CURRENT_CPU, a synchronous waitqueue helper that requests the
+waker's CPU, and use it for Binder two-way request and reply wakeups.
+
+Placement follows the affinity-only predicate used by upstream
+select_task_rq_fair(): honour the request when the wakee is allowed on
+the waker's CPU, otherwise fall through to the existing placement path
+unchanged.  This patch is also the comparison baseline for the guarded
+handoff variants added on top.
+
+Binder exports per-direction handoff counters and runtime knobs under
+/sys/kernel/debug/binder/ctabs/ (directory name kept for compatibility
+with the existing measurement scripts).
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c          | 132 +++++++++++++++++++++++++++++-
+ drivers/android/binder_internal.h |   6 ++
+ include/linux/wait.h              |   3 +
+ kernel/sched/core.c               |   3 +-
+ kernel/sched/fair.c               |  13 +++
+ kernel/sched/sched.h              |   1 +
+ kernel/sched/wait.c               |  19 +++++
+ 7 files changed, 172 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index f5a6aec3f00a..dbec133b658e 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -92,6 +92,29 @@ static struct dentry *binder_debugfs_dir_entry_root;
+ static struct dentry *binder_debugfs_dir_entry_proc;
+ static atomic_t binder_last_id;
+ 
++/*
++ * VWH handoff: binder knows the waker blocks right after a two-way
++ * transaction / reply, so it asks the scheduler to run the wakee on the
++ * waker's CPU (WF_SYNC|WF_CURRENT_CPU).  The scheduler decides whether the
++ * request is admissible; see handoff_admit() in kernel/sched/fair.c.
++ *   bit0 = two-way transaction (caller -> server thread)
++ *   bit1 = reply (server thread -> caller)
++ */
++#define VWH_HANDOFF_TXN		BIT(0)
++#define VWH_HANDOFF_REPLY	BIT(1)
++static unsigned int vwh_handoff __read_mostly;
++
++static atomic_t vwh_stat_handoff_txn = ATOMIC_INIT(0);
++static atomic_t vwh_stat_handoff_reply = ATOMIC_INIT(0);
++/* wakee resumed on the CPU the handoff targeted / somewhere else */
++static atomic_t vwh_stat_handoff_land = ATOMIC_INIT(0);
++static atomic_t vwh_stat_handoff_miss = ATOMIC_INIT(0);
++/* per-direction landing accounting */
++static atomic_t vwh_stat_handoff_txn_land = ATOMIC_INIT(0);
++static atomic_t vwh_stat_handoff_txn_miss = ATOMIC_INIT(0);
++static atomic_t vwh_stat_handoff_reply_land = ATOMIC_INIT(0);
++static atomic_t vwh_stat_handoff_reply_miss = ATOMIC_INIT(0);
++
+ static int proc_show(struct seq_file *m, void *unused);
+ DEFINE_SHOW_ATTRIBUTE(proc);
+ 
+@@ -633,6 +656,39 @@ binder_select_thread_ilocked(struct binder_proc *proc)
+ 	return thread;
+ }
+ 
++/* VWH: wake @thread on this CPU; see vwh_handoff. */
++static void vwh_wake_handoff(struct binder_thread *thread, int dir)
++{
++	WRITE_ONCE(thread->vwh_expect_cpu, raw_smp_processor_id());
++	WRITE_ONCE(thread->vwh_expect_dir, dir);
++	wake_up_interruptible_sync_on_current_cpu(&thread->wait);
++}
++
++/* Called by a woken thread: did it resume where the handoff targeted? */
++static void vwh_note_landing(struct binder_thread *thread)
++{
++	int exp = READ_ONCE(thread->vwh_expect_cpu);
++	int dir = READ_ONCE(thread->vwh_expect_dir);
++
++	if (exp < 0)
++		return;
++	WRITE_ONCE(thread->vwh_expect_cpu, -1);
++	WRITE_ONCE(thread->vwh_expect_dir, 0);
++	if (raw_smp_processor_id() == exp) {
++		atomic_inc(&vwh_stat_handoff_land);
++		if (dir == VWH_HANDOFF_REPLY)
++			atomic_inc(&vwh_stat_handoff_reply_land);
++		else
++			atomic_inc(&vwh_stat_handoff_txn_land);
++	} else {
++		atomic_inc(&vwh_stat_handoff_miss);
++		if (dir == VWH_HANDOFF_REPLY)
++			atomic_inc(&vwh_stat_handoff_reply_miss);
++		else
++			atomic_inc(&vwh_stat_handoff_txn_miss);
++	}
++}
++
+ /**
+  * binder_wakeup_thread_ilocked() - wakes up a thread for doing proc work.
+  * @proc:	process to wake up a thread in
+@@ -657,10 +713,14 @@ static void binder_wakeup_thread_ilocked(struct binder_proc *proc,
+ 
+ 	if (thread) {
+ 		trace_android_vh_binder_wakeup_ilocked(thread->task, sync, proc);
+-		if (sync)
++		if (sync && (READ_ONCE(vwh_handoff) & VWH_HANDOFF_TXN)) {
++			atomic_inc(&vwh_stat_handoff_txn);
++			vwh_wake_handoff(thread, VWH_HANDOFF_TXN);
++		} else if (sync) {
+ 			wake_up_interruptible_sync(&thread->wait);
+-		else
++		} else {
+ 			wake_up_interruptible(&thread->wait);
++		}
+ 		return;
+ 	}
+ 
+@@ -3931,7 +3991,12 @@ static void binder_transaction(struct binder_proc *proc,
+ 			thread->prio_next = in_reply_to->saved_priority;
+ 			spin_unlock(&thread->prio_lock);
+ 		}
+-		wake_up_interruptible_sync(&target_thread->wait);
++		if (READ_ONCE(vwh_handoff) & VWH_HANDOFF_REPLY) {
++			atomic_inc(&vwh_stat_handoff_reply);
++			vwh_wake_handoff(target_thread, VWH_HANDOFF_REPLY);
++		} else {
++			wake_up_interruptible_sync(&target_thread->wait);
++		}
+ 		trace_android_vh_binder_restore_priority(in_reply_to, current);
+ 		binder_restore_priority(thread, &in_reply_to->saved_priority);
+ 		binder_free_transaction(in_reply_to);
+@@ -4815,12 +4880,15 @@ static int binder_wait_for_work(struct binder_thread *thread,
+ 		prepare_to_wait(&thread->wait, &wait, TASK_INTERRUPTIBLE|TASK_FREEZABLE);
+ 		if (binder_has_work_ilocked(thread, do_proc_work))
+ 			break;
+-		if (do_proc_work)
++		if (do_proc_work) {
++			WRITE_ONCE(thread->vwh_last_cpu, raw_smp_processor_id());
+ 			list_add(&thread->waiting_thread_node,
+ 				 &proc->waiting_threads);
++		}
+ 		trace_android_vh_binder_wait_for_work(do_proc_work, thread, proc);
+ 		binder_inner_proc_unlock(proc);
+ 		schedule();
++		vwh_note_landing(thread);
+ 		binder_inner_proc_lock(proc);
+ 		list_del_init(&thread->waiting_thread_node);
+ 		if (signal_pending(current)) {
+@@ -5455,6 +5523,10 @@ static struct binder_thread *binder_get_thread_ilocked(
+ 	spin_lock_init(&thread->prio_lock);
+ 	thread->prio_state = BINDER_PRIO_SET;
+ 	thread->ee.command = BR_OK;
++	/* VWH: CPU bookkeeping for handoff placement. */
++	WRITE_ONCE(thread->vwh_last_cpu, -1);
++	WRITE_ONCE(thread->vwh_expect_cpu, -1);
++	WRITE_ONCE(thread->vwh_expect_dir, 0);
+ 	INIT_LIST_HEAD(&new_thread->waiting_thread_node);
+ 	return thread;
+ }
+@@ -7219,6 +7291,41 @@ DEFINE_SHOW_ATTRIBUTE(transactions);
+ DEFINE_SHOW_ATTRIBUTE(transactions_hashed);
+ DEFINE_SHOW_ATTRIBUTE(transaction_log);
+ 
++static int vwh_stats_show(struct seq_file *m, void *unused)
++{
++	seq_printf(m, "handoff:           %u\n", vwh_handoff);
++	seq_printf(m, "handoff_txn:       %d\n", atomic_read(&vwh_stat_handoff_txn));
++	seq_printf(m, "handoff_reply:     %d\n", atomic_read(&vwh_stat_handoff_reply));
++	seq_printf(m, "handoff_land:      %d\n", atomic_read(&vwh_stat_handoff_land));
++	seq_printf(m, "handoff_miss:      %d\n", atomic_read(&vwh_stat_handoff_miss));
++	seq_printf(m, "handoff_txn_land:  %d\n", atomic_read(&vwh_stat_handoff_txn_land));
++	seq_printf(m, "handoff_txn_miss:  %d\n", atomic_read(&vwh_stat_handoff_txn_miss));
++	seq_printf(m, "handoff_reply_land:%d\n", atomic_read(&vwh_stat_handoff_reply_land));
++	seq_printf(m, "handoff_reply_miss:%d\n", atomic_read(&vwh_stat_handoff_reply_miss));
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(vwh_stats);
++
++static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
++			       size_t count, loff_t *ppos)
++{
++	atomic_set(&vwh_stat_handoff_txn, 0);
++	atomic_set(&vwh_stat_handoff_reply, 0);
++	atomic_set(&vwh_stat_handoff_land, 0);
++	atomic_set(&vwh_stat_handoff_miss, 0);
++	atomic_set(&vwh_stat_handoff_txn_land, 0);
++	atomic_set(&vwh_stat_handoff_txn_miss, 0);
++	atomic_set(&vwh_stat_handoff_reply_land, 0);
++	atomic_set(&vwh_stat_handoff_reply_miss, 0);
++	return count;
++}
++
++static const struct file_operations vwh_reset_fops = {
++	.owner = THIS_MODULE,
++	.write = vwh_reset_write,
++	.llseek = generic_file_llseek,
++};
++
+ const struct binder_debugfs_entry binder_debugfs_entries[] = {
+ 	{
+ 		.name = "state",
+@@ -7312,6 +7419,7 @@ static int __init binder_init(void)
+ 	binder_debugfs_dir_entry_root = debugfs_create_dir("binder", NULL);
+ 	if (binder_debugfs_dir_entry_root) {
+ 		const struct binder_debugfs_entry *db_entry;
++		struct dentry *ctabs_dir;
+ 
+ 		binder_for_each_debugfs_entry(db_entry)
+ 			debugfs_create_file(db_entry->name,
+@@ -7322,6 +7430,22 @@ static int __init binder_init(void)
+ 
+ 		binder_debugfs_dir_entry_proc = debugfs_create_dir("proc",
+ 						 binder_debugfs_dir_entry_root);
++
++		/*
++		 * VWH: runtime knobs for the wakeup experiments.  The directory
++		 * keeps the historical "ctabs" name so the existing measurement
++		 * scripts work unchanged (/sys/kernel/debug/binder/ctabs/).
++		 */
++		ctabs_dir = debugfs_create_dir("ctabs",
++					       binder_debugfs_dir_entry_root);
++		if (ctabs_dir) {
++			debugfs_create_u32("handoff", 0644, ctabs_dir,
++					   &vwh_handoff);
++			debugfs_create_file("stats", 0444, ctabs_dir, NULL,
++					    &vwh_stats_fops);
++			debugfs_create_file("reset", 0200, ctabs_dir, NULL,
++					    &vwh_reset_fops);
++		}
+ 	}
+ 
+ 	if (!IS_ENABLED(CONFIG_ANDROID_BINDERFS) &&
+diff --git a/drivers/android/binder_internal.h b/drivers/android/binder_internal.h
+index 06ac60a7c6dc..4815acd8b169 100644
+--- a/drivers/android/binder_internal.h
++++ b/drivers/android/binder_internal.h
+@@ -610,6 +610,12 @@ struct binder_thread {
+ 	atomic_t tmp_ref;
+ 	bool is_dead;
+ 	struct task_struct *task;
++	/* VWH: CPU this thread last blocked on, -1 if unknown */
++	int vwh_last_cpu;
++	/* VWH: CPU a handoff wakeup targeted, -1 if none pending */
++	int vwh_expect_cpu;
++	/* VWH: direction of the pending expectation (0 = none) */
++	u8 vwh_expect_dir;
+ 	spinlock_t prio_lock;
+ 	struct binder_priority prio_next;
+ 	enum binder_prio_state prio_state;
+diff --git a/include/linux/wait.h b/include/linux/wait.h
+index bc06a315653a..cb8fb3855c4a 100644
+--- a/include/linux/wait.h
++++ b/include/linux/wait.h
+@@ -230,6 +230,9 @@ void __wake_up_pollfree(struct wait_queue_head *wq_head);
+ #define wake_up_interruptible_nr(x, nr)	__wake_up(x, TASK_INTERRUPTIBLE, nr, NULL)
+ #define wake_up_interruptible_all(x)	__wake_up(x, TASK_INTERRUPTIBLE, 0, NULL)
+ #define wake_up_interruptible_sync(x)	__wake_up_sync((x), TASK_INTERRUPTIBLE)
++void __wake_up_sync_on_current_cpu(struct wait_queue_head *wq_head, unsigned int mode);
++#define wake_up_interruptible_sync_on_current_cpu(x)			\
++	__wake_up_sync_on_current_cpu((x), TASK_INTERRUPTIBLE)
+ 
+ /*
+  * Wakeup macros to be used to report events to the targets.
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 2174dd3ffb2a..434a0dbfdfdd 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -7070,7 +7070,8 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
+ int default_wake_function(wait_queue_entry_t *curr, unsigned mode, int wake_flags,
+ 			  void *key)
+ {
+-	WARN_ON_ONCE(IS_ENABLED(CONFIG_SCHED_DEBUG) && wake_flags & ~(WF_SYNC | WF_ANDROID_VENDOR));
++	WARN_ON_ONCE(IS_ENABLED(CONFIG_SCHED_DEBUG) &&
++		     wake_flags & ~(WF_SYNC | WF_CURRENT_CPU | WF_ANDROID_VENDOR));
+ 	return try_to_wake_up(curr->private, mode, wake_flags);
+ }
+ EXPORT_SYMBOL(default_wake_function);
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index b1b2d25a40c6..76164a4939e1 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7546,6 +7546,19 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	/* SD_flags and WF_flags share the first nibble */
+ 	int sd_flag = wake_flags & 0xF;
+ 
++	/*
++	 * VWH: WF_SYNC|WF_CURRENT_CPU means the waker guarantees it blocks
++	 * right after this wakeup, so run the wakee on the waker's CPU when
++	 * the wakee is allowed there.  This is the affinity-only predicate
++	 * used by upstream select_task_rq_fair(); it is evaluated ahead of
++	 * the vendor hook so the behaviour does not depend on the vendor
++	 * scheduler.
++	 */
++	if ((wake_flags & (WF_TTWU | WF_SYNC | WF_CURRENT_CPU)) ==
++	    (WF_TTWU | WF_SYNC | WF_CURRENT_CPU) &&
++	    cpumask_test_cpu(cpu, p->cpus_ptr))
++		return cpu;
++
+ 	if (trace_android_rvh_select_task_rq_fair_enabled() &&
+ 	    !(sd_flag & SD_BALANCE_FORK))
+ 		sync_entity_load_avg(&p->se);
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+index 8ccf52d0bf2b..614365d77a95 100644
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -2127,6 +2127,7 @@ static inline int task_on_rq_migrating(struct task_struct *p)
+ 
+ #define WF_SYNC     0x10 /* Waker goes to sleep after wakeup */
+ #define WF_MIGRATED 0x20 /* Internal use, task got migrated */
++#define WF_CURRENT_CPU 0x40 /* Prefer to move the wakee to the current CPU. */
+ 
+ #define WF_ANDROID_VENDOR	0x1000 /* Vendor specific for Android */
+ 
+diff --git a/kernel/sched/wait.c b/kernel/sched/wait.c
+index 9053bef80dfb..3d011b9a1312 100644
+--- a/kernel/sched/wait.c
++++ b/kernel/sched/wait.c
+@@ -213,6 +213,25 @@ void __wake_up_sync_key(struct wait_queue_head *wq_head, unsigned int mode,
+ }
+ EXPORT_SYMBOL_GPL(__wake_up_sync_key);
+ 
++/*
++ * Sync wakeup for callers that guarantee they block right after the wakeup
++ * (e.g. a binder two-way transaction): additionally ask the scheduler to
++ * keep the wakee on the waker's CPU.  The scheduler may still refuse; see
++ * select_task_rq_fair().
++ */
++void __wake_up_sync_on_current_cpu(struct wait_queue_head *wq_head,
++				   unsigned int mode)
++{
++	int wake_flags = WF_SYNC;
++
++	if (unlikely(!wq_head))
++		return;
++
++	trace_android_vh_set_wake_flags(&wake_flags, &mode);
++	__wake_up_common_lock(wq_head, mode, 1, wake_flags | WF_CURRENT_CPU,
++			      NULL);
++}
++
+ /**
+  * __wake_up_locked_sync_key - wake up a thread blocked on a locked waitqueue.
+  * @wq_head: the waitqueue

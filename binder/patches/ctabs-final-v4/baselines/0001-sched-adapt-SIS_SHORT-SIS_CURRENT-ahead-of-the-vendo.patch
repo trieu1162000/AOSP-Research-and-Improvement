@@ -1,0 +1,255 @@
+From 286c44b66617b37c1d85c198f35139a2b0aa3aee Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Tue, 6 Oct 2026 22:22:22 +0700
+Subject: [PATCH] sched: adapt SIS_SHORT/SIS_CURRENT ahead of the vendor hook
+
+Port the unmerged "wake short task on current CPU" heuristic (Chen Yu,
+LKML v6, 2023; carried by XanMod 6.5 as SIS_CURRENT and dropped from
+later XanMod branches) as an evaluation baseline.
+
+The original series hooks wake_affine()/select_idle_sibling(), i.e. the
+idle-scan path after EAS and after the Android vendor placement hook
+(android_rvh_select_task_rq_fair).  On EAS-enabled mobile kernels that
+path is not reached and the heuristic is a no-op; the same holds when a
+vendor callback returns a target CPU before record_wakee() runs.
+
+Evaluate the unchanged predicate (short-duration mutually-waking pair,
+single runnable waker, no wakee flips) at the handoff decision point,
+ahead of the vendor hook, gated on WF_SYNC, and expose sis_current plus
+sis_calls/sis_hits counters.  A new sis_rvh counter reports sync
+wakeups that the vendor hook redirected, so the two paths can be told
+apart at runtime.
+
+The duration state reuses reserved ANDROID_KABI slots in sched_entity so
+the module_layout ABI is unchanged.
+
+Signed-off-by: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+---
+ drivers/android/binder.c | 14 +++++++
+ include/linux/sched.h    |  7 +++-
+ kernel/sched/core.c      |  2 +
+ kernel/sched/debug.c     |  1 +
+ kernel/sched/fair.c      | 81 +++++++++++++++++++++++++++++++++++++++-
+ 5 files changed, 101 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 9e758650d41c..4b88c530cbc8 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -119,6 +119,11 @@ static atomic_t vwh_stat_handoff_reply_miss = ATOMIC_INIT(0);
+ 
+ /* VWH handoff admission mask; defined in kernel/sched/fair.c. */
+ extern unsigned int handoff_guard;
++/* VWH SIS comparison baseline; defined in kernel/sched/fair.c. */
++extern unsigned int vwh_sis_current;
++extern atomic_t vwh_sis_calls;
++extern atomic_t vwh_sis_hits;
++extern atomic_t vwh_stat_sis_rvh;
+ 
+ static int proc_show(struct seq_file *m, void *unused);
+ DEFINE_SHOW_ATTRIBUTE(proc);
+@@ -7510,6 +7515,10 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "elected_sticky:    %d\n", atomic_read(&vwh_stat_elected_sticky));
+ 	seq_printf(m, "elected_age:       %d\n", atomic_read(&vwh_stat_elected_age));
+ 	seq_printf(m, "elect_fallback:    %d\n", atomic_read(&vwh_stat_elect_fallback));
++	seq_printf(m, "sis_current:       %u\n", vwh_sis_current);
++	seq_printf(m, "sis_calls:         %d\n", atomic_read(&vwh_sis_calls));
++	seq_printf(m, "sis_hits:          %d\n", atomic_read(&vwh_sis_hits));
++	seq_printf(m, "sis_rvh:           %d\n", atomic_read(&vwh_stat_sis_rvh));
+ 	return 0;
+ }
+ DEFINE_SHOW_ATTRIBUTE(vwh_stats);
+@@ -7530,6 +7539,9 @@ static ssize_t vwh_reset_write(struct file *file, const char __user *ubuf,
+ 	atomic_set(&vwh_stat_elected_sticky, 0);
+ 	atomic_set(&vwh_stat_elected_age, 0);
+ 	atomic_set(&vwh_stat_elect_fallback, 0);
++	atomic_set(&vwh_sis_calls, 0);
++	atomic_set(&vwh_sis_hits, 0);
++	atomic_set(&vwh_stat_sis_rvh, 0);
+ 	return count;
+ }
+ 
+@@ -7658,6 +7670,8 @@ static int __init binder_init(void)
+ 					   &handoff_guard);
+ 			debugfs_create_u32("mode", 0644, ctabs_dir,
+ 					   &vwh_mode);
++			debugfs_create_u32("sis_current", 0644, ctabs_dir,
++					   &vwh_sis_current);
+ 			debugfs_create_u32("age_ms", 0644, ctabs_dir,
+ 					   &vwh_age_ms);
+ 			debugfs_create_u32("score_local", 0644, ctabs_dir,
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index d70914d7d3d4..55337dab25c5 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -583,8 +583,11 @@ struct sched_entity {
+ 	struct sched_avg		avg;
+ #endif
+ 
+-	ANDROID_KABI_RESERVE(1);
+-	ANDROID_KABI_RESERVE(2);
++	/*
++	 * Reuse reserved slots so SIS state does not change the GKI ABI.
++	 */
++	ANDROID_KABI_USE(1, u64 prev_sleep_sum_runtime);
++	ANDROID_KABI_USE(2, u64 dur_avg);
+ 	ANDROID_KABI_RESERVE(3);
+ 	ANDROID_KABI_RESERVE(4);
+ };
+diff --git a/kernel/sched/core.c b/kernel/sched/core.c
+index 434a0dbfdfdd..542212850f2e 100644
+--- a/kernel/sched/core.c
++++ b/kernel/sched/core.c
+@@ -4546,6 +4546,8 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
+ 	p->se.prev_sum_exec_runtime	= 0;
+ 	p->se.nr_migrations		= 0;
+ 	p->se.vruntime			= 0;
++	p->se.dur_avg			= 0;
++	p->se.prev_sleep_sum_runtime	= 0;
+ 	INIT_LIST_HEAD(&p->se.group_node);
+ 
+ #ifdef CONFIG_FAIR_GROUP_SCHED
+diff --git a/kernel/sched/debug.c b/kernel/sched/debug.c
+index 3ceee0e354e3..e5e35bd10a20 100644
+--- a/kernel/sched/debug.c
++++ b/kernel/sched/debug.c
+@@ -1026,6 +1026,7 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
+ 	__PS("nr_involuntary_switches", p->nivcsw);
+ 
+ 	P(se.load.weight);
++	P(se.dur_avg);
+ #ifdef CONFIG_SMP
+ 	P(se.avg.load_sum);
+ 	P(se.avg.runnable_sum);
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index 3d3c3fd9a63a..5392243e86e0 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -6242,6 +6242,34 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 
+ static void set_next_buddy(struct sched_entity *se);
+ 
++/*
++ * VWH SIS comparison baseline: port of SIS_SHORT/SIS_CURRENT (Chen Yu,
++ * XanMod 6.5, unmerged) behind a ctabs knob.  It keeps a pair of short
++ * tasks that wake each other on the current CPU instead of scanning for
++ * an idle one.
++ */
++unsigned int vwh_sis_current __read_mostly;
++atomic_t vwh_sis_calls = ATOMIC_INIT(0);
++atomic_t vwh_sis_hits = ATOMIC_INIT(0);
++/* vendor hook returned a target for a sync wakeup */
++atomic_t vwh_stat_sis_rvh = ATOMIC_INIT(0);
++
++/*
++ * VWH SIS comparison baseline (port of SIS_SHORT/SIS_CURRENT, unmerged):
++ * record the average duration of a task.
++ */
++static inline void dur_avg_update(struct task_struct *p, bool task_sleep)
++{
++	u64 dur;
++
++	if (!task_sleep || !READ_ONCE(vwh_sis_current))
++		return;
++
++	dur = p->se.sum_exec_runtime - p->se.prev_sleep_sum_runtime;
++	p->se.prev_sleep_sum_runtime = p->se.sum_exec_runtime;
++	update_avg(&p->se.dur_avg, dur);
++}
++
+ /*
+  * The dequeue_task method is called before nr_running is
+  * decreased. We remove the task from the rbtree and
+@@ -6315,6 +6343,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
+ 
+ dequeue_throttle:
+ 	util_est_update(&rq->cfs, p, task_sleep);
++	dur_avg_update(p, task_sleep);
+ 	hrtick_update(rq);
+ }
+ 
+@@ -6530,6 +6559,33 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
+ 	return this_eff_load < prev_eff_load ? this_cpu : nr_cpumask_bits;
+ }
+ 
++static bool wake_on_current(int this_cpu, struct task_struct *p, bool sync)
++{
++	if (!READ_ONCE(vwh_sis_current) || !sync)
++		return false;
++
++	atomic_inc(&vwh_sis_calls);
++
++	if (cpu_rq(this_cpu)->nr_running > 1)
++		return false;
++
++	if (!current->se.dur_avg ||
++	    current->se.dur_avg >= sysctl_sched_migration_cost)
++		return false;
++
++	if (!p->se.dur_avg || p->se.dur_avg >= sysctl_sched_migration_cost)
++		return false;
++
++	if (current->wakee_flips || p->wakee_flips)
++		return false;
++
++	if (current->last_wakee != p || p->last_wakee != current)
++		return false;
++
++	atomic_inc(&vwh_sis_hits);
++	return true;
++}
++
+ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
+ 		       int this_cpu, int prev_cpu, int sync)
+ {
+@@ -7585,6 +7641,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	int new_cpu = prev_cpu;
+ 	int want_affine = 0;
+ 	int target_cpu = -1;
++	bool sis_recorded = false;
+ 	/* SD_flags and WF_flags share the first nibble */
+ 	int sd_flag = wake_flags & 0xF;
+ 
+@@ -7597,20 +7654,40 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 	if (handoff_admit(p, cpu, wake_flags))
+ 		return cpu;
+ 
++	/*
++	 * VWH SIS comparison baseline (adapted for EAS): the original series
++	 * hooks the idle scan, which EAS pre-empts on mobile kernels.
++	 * Evaluate the heuristic at the handoff decision point instead,
++	 * ahead of the vendor hook, so neither EAS nor a vendor placement
++	 * callback can turn it into a no-op.  record_wakee() normally runs
++	 * inside the WF_TTWU block below; run it once here for the
++	 * evaluated wakeup so the pair state is up to date.
++	 */
++	if ((wake_flags & WF_TTWU) && sync && READ_ONCE(vwh_sis_current)) {
++		record_wakee(p);
++		sis_recorded = true;
++		if (wake_on_current(cpu, p, sync))
++			return cpu;
++	}
++
+ 	if (trace_android_rvh_select_task_rq_fair_enabled() &&
+ 	    !(sd_flag & SD_BALANCE_FORK))
+ 		sync_entity_load_avg(&p->se);
+ 	trace_android_rvh_select_task_rq_fair(p, prev_cpu, sd_flag,
+ 			wake_flags, &target_cpu);
+-	if (target_cpu >= 0)
++	if (target_cpu >= 0) {
++		if ((wake_flags & WF_TTWU) && sync)
++			atomic_inc(&vwh_stat_sis_rvh);
+ 		return target_cpu;
++	}
+ 
+ 	/*
+ 	 * required for stable ->cpus_allowed
+ 	 */
+ 	lockdep_assert_held(&p->pi_lock);
+ 	if (wake_flags & WF_TTWU) {
+-		record_wakee(p);
++		if (!sis_recorded)
++			record_wakee(p);
+ 
+ 		if (sched_energy_enabled()) {
+ 			new_cpu = find_energy_efficient_cpu(p, prev_cpu, sync);

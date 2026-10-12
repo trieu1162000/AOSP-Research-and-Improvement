@@ -1,0 +1,166 @@
+From b8fa06bc52f12b0215c0e92c792d8dbeee43699d Mon Sep 17 00:00:00 2001
+From: Nhat-Trieu Huynh-Pham <trieu2.huynh@lge.com>
+Date: Sun, 11 Oct 2026 18:09:12 +0700
+Subject: [PATCH] sched: strip the handoff admission guard (upstream predicate
+ only)
+
+handoff_admit() now admits a WF_TTWU|WF_SYNC|WF_CURRENT_CPU request
+exactly when the upstream predicate holds: the wake-flag set matches and
+the target CPU is in the wakee's affinity mask.  The handoff_guard
+bitmask (EXITING/OCCUPANCY/FITS/WIDE), its default envelope and the
+sched_handoff_local_ok() mirror of the extra checks are removed, so the
+Binder-side feasibility test and the wake path can no longer disagree.
+The debugfs knob, the stats line and the extern declaration are gone.
+---
+ drivers/android/binder.c |  5 ---
+ kernel/sched/fair.c      | 76 +++++++---------------------------------
+ 2 files changed, 13 insertions(+), 68 deletions(-)
+
+diff --git a/drivers/android/binder.c b/drivers/android/binder.c
+index 3e6ca91d3c37..a6431d8a3681 100644
+--- a/drivers/android/binder.c
++++ b/drivers/android/binder.c
+@@ -133,8 +133,6 @@ static atomic_t vwh_stat_handoff_txn_miss = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_handoff_reply_land = ATOMIC_INIT(0);
+ static atomic_t vwh_stat_handoff_reply_miss = ATOMIC_INIT(0);
+ 
+-/* VWH handoff admission mask; defined in kernel/sched/fair.c. */
+-extern unsigned int handoff_guard;
+ /* VWH SIS comparison baseline; defined in kernel/sched/fair.c. */
+ extern unsigned int vwh_sis_current;
+ extern atomic_t vwh_sis_calls;
+@@ -7910,7 +7908,6 @@ static int vwh_stats_show(struct seq_file *m, void *unused)
+ 	seq_printf(m, "handoff_txn_miss:  %d\n", atomic_read(&vwh_stat_handoff_txn_miss));
+ 	seq_printf(m, "handoff_reply_land:%d\n", atomic_read(&vwh_stat_handoff_reply_land));
+ 	seq_printf(m, "handoff_reply_miss:%d\n", atomic_read(&vwh_stat_handoff_reply_miss));
+-	seq_printf(m, "handoff_guard:     %u\n", handoff_guard);
+ 	seq_printf(m, "mode:              %u\n", vwh_mode);
+ 	seq_printf(m, "age_ms:            %u\n", vwh_age_ms);
+ 	seq_printf(m, "score_local:       %u\n", vwh_score_local);
+@@ -8108,8 +8105,6 @@ static int __init binder_init(void)
+ 		if (ctabs_dir) {
+ 			debugfs_create_u32("handoff", 0644, ctabs_dir,
+ 					   &vwh_handoff);
+-			debugfs_create_u32("handoff_guard", 0644, ctabs_dir,
+-					   &handoff_guard);
+ 			debugfs_create_u32("handoff_defer", 0644, ctabs_dir,
+ 					   &vwh_handoff_defer);
+ 			debugfs_create_u32("defer_window_us", 0644, ctabs_dir,
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index cda2cadea85e..1acba99cb726 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7621,60 +7621,20 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
+ }
+ 
+ /*
+- * Handoff admission controls for current-CPU requests.  The bitmask is a
+- * debug knob: AFFINITY alone reproduces the upstream affinity-only
+- * predicate, while the full mask is the verified envelope.
+- */
+-#define HANDOFF_GUARD_AFFINITY		BIT(0)
+-#define HANDOFF_GUARD_EXITING		BIT(1)
+-#define HANDOFF_GUARD_OCCUPANCY		BIT(2)
+-#define HANDOFF_GUARD_FITS		BIT(3)
+-#define HANDOFF_GUARD_WIDE		BIT(4)
+-#define HANDOFF_GUARD_FULL		(HANDOFF_GUARD_AFFINITY |	\
+-					 HANDOFF_GUARD_EXITING |	\
+-					 HANDOFF_GUARD_OCCUPANCY |	\
+-					 HANDOFF_GUARD_FITS)
+-
+-/*
+- * v3 measurement: OCCUPANCY rejects ~40k local handoffs per run because
+- * the waker's rq may still hold another task when the waker is about to
+- * sleep, and costs ~3% throughput; FITS is neutral and keeps the
+- * capacity constraint.  The default envelope is therefore affinity +
+- * exiting + fits; OCCUPANCY and WIDE stay opt-in.
+- */
+-#define HANDOFF_GUARD_DEFAULT	(HANDOFF_GUARD_AFFINITY |	\
+-				 HANDOFF_GUARD_EXITING |	\
+-				 HANDOFF_GUARD_FITS)
+-
+-unsigned int handoff_guard __read_mostly = HANDOFF_GUARD_DEFAULT;
+-
+-/*
+- * Admission for a current-CPU handoff request.  A request is admitted only
+- * when the wake flags match and every enabled check passes; otherwise the
+- * caller falls through to the ordinary placement path with WF_SYNC intact.
++ * Admission for a current-CPU handoff request: the upstream predicate.
++ * A request is admitted when the wake flags match and the target CPU is
++ * in the wakee's affinity mask; otherwise the caller falls through to
++ * the ordinary placement path with WF_SYNC intact.
+  */
+ static bool handoff_admit(struct task_struct *p, int cpu, int wake_flags)
+ {
+-	unsigned int guard = READ_ONCE(handoff_guard);
+-
+ 	if ((wake_flags & (WF_TTWU | WF_SYNC | WF_CURRENT_CPU)) !=
+ 	    (WF_TTWU | WF_SYNC | WF_CURRENT_CPU))
+ 		return false;
+ 
+-	/*
+-	 * Affinity is mandatory: a placement hint must never override
+-	 * p->cpus_ptr, the bitmask only filters the remaining checks.
+-	 */
++	/* A placement hint must never override p->cpus_ptr. */
+ 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
+ 		return false;
+-	if ((guard & HANDOFF_GUARD_EXITING) && (current->flags & PF_EXITING))
+-		return false;
+-	if ((guard & HANDOFF_GUARD_OCCUPANCY) && cpu_rq(cpu)->nr_running != 1)
+-		return false;
+-	if ((guard & HANDOFF_GUARD_FITS) && !task_fits_cpu(p, cpu))
+-		return false;
+-	if ((guard & HANDOFF_GUARD_WIDE) && wake_wide(p))
+-		return false;
+ 
+ 	return true;
+ }
+@@ -7704,9 +7664,9 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
+ 
+ 	/*
+ 	 * VWH: WF_SYNC|WF_CURRENT_CPU asks to run the wakee on the waker's
+-	 * CPU.  The request is admitted only when the envelope passes; see
+-	 * handoff_admit().  A rejected request retains WF_SYNC and continues
+-	 * through the unmodified placement path.
++	 * CPU.  The request is admitted only when the upstream predicate
++	 * passes; see handoff_admit().  A rejected request retains WF_SYNC
++	 * and continues through the unmodified placement path.
+ 	 */
+ 	if (handoff_admit(p, cpu, wake_flags))
+ 		return cpu;
+@@ -7887,29 +7847,19 @@ bool sched_handoff_target_ok(struct task_struct *p, int cpu)
+ }
+ 
+ /*
+- * Binder-side mirror of handoff_admit()'s envelope for the election's
++ * Binder-side mirror of handoff_admit()'s predicate for the election's
+  * "feasible local" invariant (I2/I3): would a hand-off of @p to @cpu pass
+- * admission?  Deliberately does NOT check idleness -- the caller is running
+- * on @cpu at election time; idle is required only for no-drag targets
+- * (sched_handoff_target_ok()).  Reads the same handoff_guard knob as the
+- * wake path so election and admission cannot disagree.
++ * admission?  Admission is the upstream predicate (online + affinity), so
++ * this checks the same conditions and deliberately does NOT check idleness
++ * -- the caller is running on @cpu at election time; idle is required only
++ * for no-drag targets (sched_handoff_target_ok()).
+  */
+ bool sched_handoff_local_ok(struct task_struct *p, int cpu)
+ {
+-	unsigned int guard = READ_ONCE(handoff_guard);
+-
+ 	if ((unsigned int)cpu >= nr_cpu_ids || !cpu_online(cpu))
+ 		return false;
+ 	if (!cpumask_test_cpu(cpu, p->cpus_ptr))
+ 		return false;
+-	if ((guard & HANDOFF_GUARD_EXITING) && (current->flags & PF_EXITING))
+-		return false;
+-	if ((guard & HANDOFF_GUARD_OCCUPANCY) && cpu_rq(cpu)->nr_running != 1)
+-		return false;
+-	if ((guard & HANDOFF_GUARD_FITS) && !task_fits_cpu(p, cpu))
+-		return false;
+-	if ((guard & HANDOFF_GUARD_WIDE) && wake_wide(p))
+-		return false;
+ 	return true;
+ }
+ 
